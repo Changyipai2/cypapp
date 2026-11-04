@@ -948,6 +948,7 @@ fun PhotosScreen(
     onClearSelection: () -> Unit
 ) {
     val selecting = selected.isNotEmpty()
+    androidx.activity.compose.BackHandler { if (selecting) onClearSelection() else onBack() }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1029,6 +1030,7 @@ fun TrashScreen(
     val trashItems = Trash.items
     val selecting = selected.isNotEmpty()
     var confirmEmpty by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler { if (selecting) onClearSelection() else onBack() }
 
     Scaffold(
         topBar = {
@@ -1115,6 +1117,7 @@ fun TrashScreen(
 fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
     val context = LocalContext.current
     val rootName = DocStore.root(context)?.name ?: "尚未授權"
+    androidx.activity.compose.BackHandler { onBack() }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1308,7 +1311,7 @@ fun ViewerScreen(
     val backAction = {
         if (rotation != 0f) askSaveOnExit = true else onClose()
     }
-    androidx.activity.compose.BackHandler(enabled = rotation != 0f) { askSaveOnExit = true }
+    androidx.activity.compose.BackHandler { backAction() }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
