@@ -294,7 +294,7 @@ fun GalleryApp() {
         ) {
             Text("需要相片權限", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.height(8.dp))
-            Text("需要讀取手機照片才能瀏覽與編輯。", color = Color.Gray, fontSize = 14.sp)
+            Text("需要讀取手機照片才能瀏覽與編輯。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
             Spacer(Modifier.height(16.dp))
             Button(onClick = { permissionLauncher.launch(neededPermissions()) }) { Text("授予權限") }
         }
@@ -879,7 +879,7 @@ fun FoldersScreen(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else if (entries.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("這支手機裡沒有找到圖片", color = Color.Gray)
+                    Text("這支手機裡沒有找到圖片", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyVerticalGrid(
@@ -928,7 +928,11 @@ fun FoldersScreen(
                                                 is FolderEntry.Media -> entry.folder.count.toString() + " 張"
                                                 is FolderEntry.App -> "App 資料夾"
                                             }
-                                            Text(count, fontSize = 11.sp, color = Color.Gray)
+                                            Text(
+                                                count,
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
                                     }
                                 }
@@ -1087,7 +1091,7 @@ fun TrashScreen(
         Box(modifier = Modifier.padding(padding)) {
             if (trashItems.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("垃圾桶是空的", color = Color.Gray)
+                    Text("垃圾桶是空的", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyVerticalGrid(columns = GridCells.Fixed(columns), contentPadding = PaddingValues(2.dp)) {
@@ -1157,18 +1161,18 @@ fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
         ) {
             Text("外觀", fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
-            Text("主題", fontSize = 13.sp, color = Color.Gray)
+            Text("主題", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             ThemeRow("跟隨系統", "system")
             ThemeRow("淺色", "light")
             ThemeRow("深色", "dark")
             ThemeRow("自訂（用下面的 Bar 顏色）", "custom")
             Spacer(Modifier.height(10.dp))
-            Text("上方 Bar 顏色", fontSize = 13.sp, color = Color.Gray)
+            Text("上方 Bar 顏色", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             PaletteRow(current = GallerySettings.topBarColor) { GallerySettings.setTopBar(it) }
             Spacer(Modifier.height(10.dp))
-            Text("檢視器工具列顏色", fontSize = 13.sp, color = Color.Gray)
+            Text("檢視器工具列顏色", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             PaletteRow(current = GallerySettings.bottomBarColor) { GallerySettings.setBottomBar(it) }
-            Text("Bar 上的文字會自動選黑或白，保持對比。", fontSize = 11.sp, color = Color.Gray)
+            Text("Bar 上的文字會自動選黑或白，保持對比。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(Modifier.height(18.dp))
             Text("欄位數", fontWeight = FontWeight.Bold)
@@ -1188,7 +1192,7 @@ fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
             Text(
                 if (allFiles) "已開啟：選了「不再詢問」後，刪除不會再跳系統確認。"
                 else "未開啟：Android 每次刪除仍會問一次。開啟後可完全靜默刪除。",
-                fontSize = 12.sp, color = Color.Gray
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = {
@@ -1209,7 +1213,7 @@ fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
             Text(
                 "目前：" + rootName + "\n授權 Pictures 後，新建／改名／搬移都在 App 內完成，不會再跳系統畫面。",
                 fontSize = 12.sp,
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onRequestRoot) { Text("授權 Pictures 資料夾") }
@@ -1555,7 +1559,7 @@ fun TargetFolderDialog(
         title = { Text(title) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Text("共 " + count + " 張。選一個資料夾：", fontSize = 13.sp, color = Color.Gray)
+                Text("共 " + count + " 張。選一個資料夾：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(6.dp))
                 folders.forEach { doc ->
                     Row(
@@ -1588,7 +1592,7 @@ fun TargetFolderDialog(
 @Composable
 fun InfoLine(label: String, value: String) {
     Row(modifier = Modifier.padding(vertical = 3.dp)) {
-        Text(label, fontSize = 13.sp, color = Color.Gray, modifier = Modifier.width(80.dp))
+        Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(80.dp))
         Text(value, fontSize = 13.sp)
     }
 }
@@ -1624,7 +1628,7 @@ fun ThumbFile(path: String, modifier: Modifier = Modifier) {
     }
     val bmp = bitmap
     if (bmp == null) Box(modifier = modifier.background(Color(0xFFE0E0E0)), contentAlignment = Alignment.Center) {
-        Text("無縮圖", fontSize = 10.sp, color = Color.Gray)
+        Text("無縮圖", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else Image(
         bitmap = bmp.asImageBitmap(),
         contentDescription = null,
