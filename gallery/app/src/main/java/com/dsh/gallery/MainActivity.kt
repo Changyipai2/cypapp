@@ -22,6 +22,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -81,6 +82,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -115,10 +117,9 @@ import kotlin.math.abs
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        GallerySettings.init(this)
         setContent {
-            MaterialTheme(
-                colorScheme = lightColorScheme(primary = Color(0xFF37474F), secondary = Color(0xFF546E7A))
-            ) {
+            GalleryTheme {
                 Surface(modifier = Modifier.fillMaxSize()) { GalleryApp() }
             }
         }
@@ -214,6 +215,45 @@ private suspend fun PointerInputScope.verticalSwipe(
         }
     }
 }
+
+/** 依設定決定主題：跟隨系統 / 淺色 / 深色 / 自訂（自訂時 Bar 顏色用手動色盤） */
+@Composable
+fun GalleryTheme(content: @Composable () -> Unit) {
+    val dark = when (GallerySettings.themeMode) {
+        "dark" -> true
+        "light" -> false
+        "system" -> isSystemInDarkTheme()
+        else -> false
+    }
+    val scheme = if (dark) {
+        darkColorScheme(primary = Color(0xFF90A4AE), secondary = Color(0xFFB0BEC5))
+    } else {
+        lightColorScheme(primary = Color(0xFF37474F), secondary = Color(0xFF546E7A))
+    }
+    MaterialTheme(colorScheme = scheme, content = content)
+}
+
+/** 上方 Bar 的底色：自訂模式用手動色，其餘跟隨主題 */
+@Composable
+fun barColor(): Color =
+    if (GallerySettings.themeMode == "custom") GallerySettings.topBar
+    else MaterialTheme.colorScheme.surface
+
+@Composable
+fun onBarColor(): Color =
+    if (GallerySettings.themeMode == "custom") GallerySettings.onTopBar
+    else MaterialTheme.colorScheme.onSurface
+
+/** 檢視器浮層工具列：自訂模式用「底部列顏色」 */
+@Composable
+fun viewerBarColor(): Color =
+    if (GallerySettings.themeMode == "custom") GallerySettings.bottomBar.copy(alpha = 0.88f)
+    else MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+
+@Composable
+fun onViewerBarColor(): Color =
+    if (GallerySettings.themeMode == "custom") GallerySettings.onBottomBar
+    else MaterialTheme.colorScheme.onSurface
 
 @Composable
 fun GalleryApp() {
@@ -817,10 +857,10 @@ fun FoldersScreen(
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = GallerySettings.topBar,
-                    titleContentColor = GallerySettings.onTopBar,
-                    navigationIconContentColor = GallerySettings.onTopBar,
-                    actionIconContentColor = GallerySettings.onTopBar
+                    containerColor = barColor(),
+                    titleContentColor = onBarColor(),
+                    navigationIconContentColor = onBarColor(),
+                    actionIconContentColor = onBarColor()
                 ),
                 navigationIcon = {
                     if (selecting) {
@@ -920,7 +960,7 @@ fun FoldersScreen(
                                         modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(20.dp)
                                             .background(MaterialTheme.colorScheme.primary, CircleShape),
                                         contentAlignment = Alignment.Center
-                                    ) { Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(14.dp)) }
+                                    ) { Icon(Icons.Default.Check, null, tint = onViewerBarColor(), modifier = Modifier.size(14.dp)) }
                                 }
                             }
                         }
@@ -954,10 +994,10 @@ fun PhotosScreen(
             TopAppBar(
                 title = { Text(if (selecting) "已選 " + selected.size + " 張" else title, fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = GallerySettings.topBar,
-                    titleContentColor = GallerySettings.onTopBar,
-                    navigationIconContentColor = GallerySettings.onTopBar,
-                    actionIconContentColor = GallerySettings.onTopBar
+                    containerColor = barColor(),
+                    titleContentColor = onBarColor(),
+                    navigationIconContentColor = onBarColor(),
+                    actionIconContentColor = onBarColor()
                 ),
                 navigationIcon = {
                     IconButton(onClick = { if (selecting) onClearSelection() else onBack() }) {
@@ -973,7 +1013,7 @@ fun PhotosScreen(
                             Icon(Icons.Default.Check, contentDescription = "全選")
                         }
                         TextButton(onClick = onMove) {
-                            Text("搬移", color = GallerySettings.onTopBar)
+                            Text("搬移", color = onBarColor())
                         }
                         IconButton(onClick = onShare) { Icon(Icons.Default.Share, contentDescription = "分享") }
                         IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "刪除") }
@@ -1006,7 +1046,7 @@ fun PhotosScreen(
                             modifier = Modifier.align(Alignment.TopEnd).padding(3.dp).size(20.dp)
                                 .background(MaterialTheme.colorScheme.primary, CircleShape),
                             contentAlignment = Alignment.Center
-                        ) { Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(14.dp)) }
+                        ) { Icon(Icons.Default.Check, null, tint = onViewerBarColor(), modifier = Modifier.size(14.dp)) }
                     }
                 }
             }
@@ -1042,10 +1082,10 @@ fun TrashScreen(
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = GallerySettings.topBar,
-                    titleContentColor = GallerySettings.onTopBar,
-                    navigationIconContentColor = GallerySettings.onTopBar,
-                    actionIconContentColor = GallerySettings.onTopBar
+                    containerColor = barColor(),
+                    titleContentColor = onBarColor(),
+                    navigationIconContentColor = onBarColor(),
+                    actionIconContentColor = onBarColor()
                 ),
                 navigationIcon = {
                     IconButton(onClick = { if (selecting) onClearSelection() else onBack() }) {
@@ -1060,7 +1100,7 @@ fun TrashScreen(
                         IconButton(onClick = onRestore) { Icon(Icons.Default.Refresh, contentDescription = "還原") }
                         IconButton(onClick = onDeleteForever) { Icon(Icons.Default.Delete, contentDescription = "永久刪除") }
                     } else if (trashItems.isNotEmpty()) {
-                        TextButton(onClick = { confirmEmpty = true }) { Text("清空", color = GallerySettings.onTopBar) }
+                        TextButton(onClick = { confirmEmpty = true }) { Text("清空", color = onBarColor()) }
                     }
                 }
             )
@@ -1088,7 +1128,7 @@ fun TrashScreen(
                                     modifier = Modifier.align(Alignment.TopEnd).padding(3.dp).size(20.dp)
                                         .background(MaterialTheme.colorScheme.primary, CircleShape),
                                     contentAlignment = Alignment.Center
-                                ) { Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(14.dp)) }
+                                ) { Icon(Icons.Default.Check, null, tint = onViewerBarColor(), modifier = Modifier.size(14.dp)) }
                             }
                         }
                     }
@@ -1123,10 +1163,10 @@ fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
             TopAppBar(
                 title = { Text("設定", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = GallerySettings.topBar,
-                    titleContentColor = GallerySettings.onTopBar,
-                    navigationIconContentColor = GallerySettings.onTopBar,
-                    actionIconContentColor = GallerySettings.onTopBar
+                    containerColor = barColor(),
+                    titleContentColor = onBarColor(),
+                    navigationIconContentColor = onBarColor(),
+                    actionIconContentColor = onBarColor()
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "返回") }
@@ -1139,10 +1179,16 @@ fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
         ) {
             Text("外觀", fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
+            Text("主題", fontSize = 13.sp, color = Color.Gray)
+            ThemeRow("跟隨系統", "system")
+            ThemeRow("淺色", "light")
+            ThemeRow("深色", "dark")
+            ThemeRow("自訂（用下面的 Bar 顏色）", "custom")
+            Spacer(Modifier.height(10.dp))
             Text("上方 Bar 顏色", fontSize = 13.sp, color = Color.Gray)
             PaletteRow(current = GallerySettings.topBarColor) { GallerySettings.setTopBar(it) }
             Spacer(Modifier.height(10.dp))
-            Text("底部列顏色", fontSize = 13.sp, color = Color.Gray)
+            Text("檢視器工具列顏色", fontSize = 13.sp, color = Color.Gray)
             PaletteRow(current = GallerySettings.bottomBarColor) { GallerySettings.setBottomBar(it) }
             Text("Bar 上的文字會自動選黑或白，保持對比。", fontSize = 11.sp, color = Color.Gray)
 
@@ -1206,6 +1252,25 @@ fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
 
             Spacer(Modifier.height(30.dp))
         }
+    }
+}
+
+@Composable
+fun ThemeRow(label: String, mode: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .combinedClickable(
+                onClick = { GallerySettings.applyThemeMode(mode) },
+                onLongClick = { GallerySettings.applyThemeMode(mode) }
+            )
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = GallerySettings.themeMode == mode,
+            onClick = { GallerySettings.applyThemeMode(mode) }
+        )
+        Text(label, fontSize = 14.sp)
     }
 }
 
@@ -1372,14 +1437,14 @@ fun ViewerScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0x66000000))
+                .background(viewerBarColor())
                 .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = backAction) { Icon(Icons.Default.ArrowBack, "返回", tint = Color.White) }
+            IconButton(onClick = backAction) { Icon(Icons.Default.ArrowBack, "返回", tint = onViewerBarColor()) }
             Text(
                 (pagerState.currentPage + 1).toString() + " / " + photos.size,
-                color = Color.White,
+                color = onViewerBarColor(),
                 fontSize = 14.sp
             )
             Spacer(Modifier.weight(1f))
@@ -1387,15 +1452,15 @@ fun ViewerScreen(
             if (photo != null) {
                 if (rotation != 0f) {
                     IconButton(onClick = { rotateAndSave(photo, false) }) {
-                        Icon(Icons.Default.Check, "儲存旋轉", tint = Color.White)
+                        Icon(Icons.Default.Check, "儲存旋轉", tint = onViewerBarColor())
                     }
                 }
                 IconButton(onClick = { onSaveAs(photo) }) {
-                    Icon(Icons.Default.Add, "另存新檔", tint = Color.White)
+                    Icon(Icons.Default.Add, "另存新檔", tint = onViewerBarColor())
                 }
-                IconButton(onClick = { onEdit(photo) }) { Icon(Icons.Default.Edit, "編輯", tint = Color.White) }
-                IconButton(onClick = { onDetails(photo) }) { Icon(Icons.Default.Info, "資訊", tint = Color.White) }
-                IconButton(onClick = { onDelete(photo) }) { Icon(Icons.Default.Delete, "刪除", tint = Color.White) }
+                IconButton(onClick = { onEdit(photo) }) { Icon(Icons.Default.Edit, "編輯", tint = onViewerBarColor()) }
+                IconButton(onClick = { onDetails(photo) }) { Icon(Icons.Default.Info, "資訊", tint = onViewerBarColor()) }
+                IconButton(onClick = { onDelete(photo) }) { Icon(Icons.Default.Delete, "刪除", tint = onViewerBarColor()) }
             }
         }
     }
