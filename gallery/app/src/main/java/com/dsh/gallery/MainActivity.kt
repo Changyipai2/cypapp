@@ -58,7 +58,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -1271,7 +1270,7 @@ fun ViewerScreen(
                                 }
                             }
                         }
-                    }) { Icon(Icons.Default.Done, "儲存", tint = Color.White) }
+                    }) { Icon(Icons.Default.Check, "儲存", tint = Color.White) }
                 }
                 IconButton(onClick = { onSaveAs(photo) }) {
                     Icon(Icons.Default.Add, "另存新檔", tint = Color.White)
