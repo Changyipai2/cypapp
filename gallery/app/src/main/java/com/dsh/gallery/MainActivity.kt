@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -140,6 +141,25 @@ fun toast(context: android.content.Context, message: String) {
 }
 
 fun stubPhoto(id: Long): Photo = Photo(id, "", 0L, 0, 0, 0L, "image/jpeg", "", "", 0)
+
+/** 開系統「另存新檔」對話框：可自選資料夾與檔名，預設停在原資料夾 */
+fun saveAsIntent(relativePath: String, suggestedName: String): Intent {
+    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = "image/jpeg"
+        putExtra(Intent.EXTRA_TITLE, suggestedName)
+    }
+    runCatching {
+        val path = relativePath.trimEnd('/')
+        if (path.isNotEmpty()) {
+            intent.putExtra(
+                "android.provider.extra.INITIAL_URI",
+                DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:" + path)
+            )
+        }
+    }
+    return intent
+}
 
 /** 是否已取得「所有檔案存取」→ 刪除時可跳過系統確認 */
 fun hasAllFiles(context: android.content.Context): Boolean =
@@ -310,7 +330,6 @@ fun GalleryRoot() {
     var viewerIndex by remember { mutableStateOf(-1) }
     var editing by remember { mutableStateOf<Photo?>(null) }
     var details by remember { mutableStateOf<Photo?>(null) }
-    var saveAsPhoto by remember { mutableStateOf<Photo?>(null) }
     var loading by remember { mutableStateOf(true) }
 
     val confirmLauncher = rememberLauncherForActivityResult(
@@ -654,8 +673,7 @@ fun GalleryRoot() {
             onEdit = { editing = it },
             onDetails = { details = it },
             onShare = { sharePhotos(context, listOf(it)) },
-            onDelete = { requestDelete(listOf(it)) },
-            onSaveAs = { saveAsPhoto = it }
+            onDelete = { requestDelete(listOf(it)) }
         )
     }
 
@@ -780,47 +798,6 @@ fun GalleryRoot() {
         )
     }
 
-    // 另存新檔
-    saveAsPhoto?.let { photo ->
-        TargetFolderDialog(
-            title = "另存新檔",
-            count = 1,
-            onDismiss = { saveAsPhoto = null },
-            onCreate = { name ->
-                val doc = DocStore.createFolder(context, name)
-                if (doc == null) {
-                    toast(context, "請先授權 Pictures 資料夾")
-                    runCatching { rootPicker.launch(DocStore.pickRootIntent()) }
-                } else {
-                    saveAsPhoto = null
-                    reload++
-                    scope.launch {
-                        val bmp = withContext(Dispatchers.IO) { GalleryRepo.loadBitmap(resolver, photo, 4000) }
-                        if (bmp == null) toast(context, "讀取失敗") else {
-                            val ok = withContext(Dispatchers.IO) {
-                                saveBitmapIntoDoc(context, doc, bmp, photo.name.substringBeforeLast('.'))
-                            }
-                            toast(context, if (ok) "已另存新檔" else "另存失敗")
-                            reload++
-                        }
-                    }
-                }
-            },
-            onPick = { doc ->
-                saveAsPhoto = null
-                scope.launch {
-                    val bmp = withContext(Dispatchers.IO) { GalleryRepo.loadBitmap(resolver, photo, 4000) }
-                    if (bmp == null) toast(context, "讀取失敗") else {
-                        val ok = withContext(Dispatchers.IO) {
-                            saveBitmapIntoDoc(context, doc, bmp, photo.name.substringBeforeLast('.'))
-                        }
-                        toast(context, if (ok) "已另存新檔" else "另存失敗")
-                        reload++
-                    }
-                }
-            }
-        )
-    }
 }
 
 // ---------------- 畫面 ----------------
@@ -1330,8 +1307,7 @@ fun ViewerScreen(
     onEdit: (Photo) -> Unit,
     onDetails: (Photo) -> Unit,
     onShare: (Photo) -> Unit,
-    onDelete: (Photo) -> Unit,
-    onSaveAs: (Photo) -> Unit
+    onDelete: (Photo) -> Unit
 ) {
     val context = LocalContext.current
     val resolver = context.contentResolver
@@ -1344,6 +1320,45 @@ fun ViewerScreen(
     var offset by remember { mutableStateOf(Offset.Zero) }
     var saving by remember { mutableStateOf(false) }
     var askSaveOnExit by remember { mutableStateOf(false) }
+    var pendingSaveAs by remember { mutableStateOf<Bitmap?>(null) }
+
+    val saveAsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data
+        val bmp = pendingSaveAs
+        pendingSaveAs = null
+        if (result.resultCode == Activity.RESULT_OK && uri != null && bmp != null) {
+            val ok = runCatching {
+                context.contentResolver.openOutputStream(uri)?.use {
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 95, it)
+                }
+                true
+            }.getOrDefault(false)
+            toast(context, if (ok) "已另存新檔" else "另存失敗")
+        }
+    }
+
+    fun startSaveAs(photo: Photo) {
+        scope.launch {
+            val bmp = withContext(Dispatchers.IO) { GalleryRepo.loadBitmap(resolver, photo, 4000) }
+            if (bmp == null) {
+                toast(context, "讀取失敗")
+                return@launch
+            }
+            pendingSaveAs = if (rotation != 0f) {
+                Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(rotation) }, true)
+            } else bmp
+            runCatching {
+                saveAsLauncher.launch(
+                    saveAsIntent(photo.relativePath, "change_" + photo.name.substringBeforeLast('.'))
+                )
+            }.onFailure {
+                pendingSaveAs = null
+                toast(context, "無法開啟儲存對話框")
+            }
+        }
+    }
 
     LaunchedEffect(pagerState.currentPage) {
         scale = 1f
@@ -1465,7 +1480,7 @@ fun ViewerScreen(
                         Icon(Icons.Default.Check, "儲存旋轉", tint = onViewerBarColor())
                     }
                 }
-                IconButton(onClick = { onSaveAs(photo) }) {
+                IconButton(onClick = { startSaveAs(photo) }) {
                     Icon(Icons.Default.Add, "另存新檔", tint = onViewerBarColor())
                 }
                 IconButton(onClick = { onEdit(photo) }) { Icon(Icons.Default.Edit, "編輯", tint = onViewerBarColor()) }
