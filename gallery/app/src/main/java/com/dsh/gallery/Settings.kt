@@ -22,6 +22,12 @@ object GallerySettings {
         private set
     var trashColumns by mutableStateOf(3)
         private set
+    /** 文字顏色：0 = 跟隨主題 */
+    var textColor by mutableStateOf(0)
+        private set
+    /** 字重：0 = 變細 / 1 = 一般 / 2 = 加粗 */
+    var textWeight by mutableStateOf(1)
+        private set
     /** system = 跟隨系統 / light = 淺色 / dark = 深色 / custom = 自訂 Bar 顏色 */
     var themeMode by mutableStateOf("custom")
         private set
@@ -49,6 +55,8 @@ object GallerySettings {
             folderColumns = o.optInt("folderColumns", folderColumns).coerceIn(2, 10)
             photoColumns = o.optInt("photoColumns", photoColumns).coerceIn(2, 10)
             trashColumns = o.optInt("trashColumns", trashColumns).coerceIn(2, 10)
+            textColor = o.optInt("textColor", 0)
+            textWeight = o.optInt("textWeight", 1)
             themeMode = o.optString("themeMode", "custom")
             deleteBehavior = o.optString("deleteBehavior", "ask")
             rootTreeUri = o.optString("rootTreeUri", "")
@@ -62,6 +70,18 @@ object GallerySettings {
     fun applyTrashColumns(n: Int) { trashColumns = n.coerceIn(2, 10); save() }
     fun applyDeleteBehavior(mode: String) { deleteBehavior = mode; save() }
     fun applyThemeMode(mode: String) { themeMode = mode; save() }
+    fun applyTextColor(color: Int) { textColor = color; save() }
+    fun applyTextWeight(weight: Int) { textWeight = weight.coerceIn(0, 2); save() }
+
+    /** 目前設定的字重（預設 Medium，比原本的 Regular 明顯一點） */
+    fun weightOf(): androidx.compose.ui.text.font.FontWeight = when (textWeight) {
+        0 -> androidx.compose.ui.text.font.FontWeight.Light
+        2 -> androidx.compose.ui.text.font.FontWeight.Bold
+        else -> androidx.compose.ui.text.font.FontWeight.Medium
+    }
+
+    /** 目前設定的文字顏色；null = 跟隨主題 */
+    fun customTextColor(): Color? = if (textColor == 0) null else Color(textColor)
     fun applyRootTreeUri(uri: String) { rootTreeUri = uri; save() }
 
     private fun save() {
@@ -71,6 +91,8 @@ object GallerySettings {
             .put("folderColumns", folderColumns)
             .put("photoColumns", photoColumns)
             .put("trashColumns", trashColumns)
+            .put("textColor", textColor)
+            .put("textWeight", textWeight)
             .put("themeMode", themeMode)
             .put("deleteBehavior", deleteBehavior)
             .put("rootTreeUri", rootTreeUri)
