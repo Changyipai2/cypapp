@@ -317,7 +317,7 @@ fun GalleryRoot() {
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     )
                 }
-                GallerySettings.setRootTreeUri(uri.toString())
+                GallerySettings.applyRootTreeUri(uri.toString())
                 reload++
                 toast(context, "已授權：" + (DocStore.root(context)?.name ?: "資料夾"))
             }
@@ -584,7 +584,7 @@ fun GalleryRoot() {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (askNotAgain) GallerySettings.setDeleteBehavior("trash")
+                    if (askNotAgain) GallerySettings.applyDeleteBehavior("trash")
                     askDelete = null
                     trashPhotos(list)
                 }) { Text("移到垃圾桶") }
@@ -592,7 +592,7 @@ fun GalleryRoot() {
             dismissButton = {
                 Row {
                     TextButton(onClick = {
-                        if (askNotAgain) GallerySettings.setDeleteBehavior("permanent")
+                        if (askNotAgain) GallerySettings.applyDeleteBehavior("permanent")
                         askDelete = null
                         deletePermanently(list)
                     }) { Text("直接刪除", color = Color(0xFFC62828)) }
@@ -1059,9 +1059,9 @@ fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
 
             Spacer(Modifier.height(18.dp))
             Text("欄位數", fontWeight = FontWeight.Bold)
-            ColumnSlider("資料夾卡片", GallerySettings.folderColumns) { GallerySettings.setFolderColumns(it) }
-            ColumnSlider("資料夾內照片", GallerySettings.photoColumns) { GallerySettings.setPhotoColumns(it) }
-            ColumnSlider("垃圾桶縮圖", GallerySettings.trashColumns) { GallerySettings.setTrashColumns(it) }
+            ColumnSlider("資料夾卡片", GallerySettings.folderColumns) { GallerySettings.applyFolderColumns(it) }
+            ColumnSlider("資料夾內照片", GallerySettings.photoColumns) { GallerySettings.applyPhotoColumns(it) }
+            ColumnSlider("垃圾桶縮圖", GallerySettings.trashColumns) { GallerySettings.applyTrashColumns(it) }
 
             Spacer(Modifier.height(18.dp))
             Text("刪除行為", fontWeight = FontWeight.Bold)
@@ -1134,12 +1134,12 @@ fun ColumnSlider(label: String, value: Int, onChange: (Int) -> Unit) {
 fun BehaviorRow(label: String, mode: String) {
     Row(
         modifier = Modifier.fillMaxWidth().combinedClickable(
-            onClick = { GallerySettings.setDeleteBehavior(mode) },
-            onLongClick = { GallerySettings.setDeleteBehavior(mode) }
+            onClick = { GallerySettings.applyDeleteBehavior(mode) },
+            onLongClick = { GallerySettings.applyDeleteBehavior(mode) }
         ).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        RadioButton(selected = GallerySettings.deleteBehavior == mode, onClick = { GallerySettings.setDeleteBehavior(mode) })
+        RadioButton(selected = GallerySettings.deleteBehavior == mode, onClick = { GallerySettings.applyDeleteBehavior(mode) })
         Text(label, fontSize = 14.sp)
     }
 }
