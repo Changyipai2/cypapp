@@ -506,6 +506,7 @@ fun GalleryRoot() {
             },
             onOpen = { index -> viewerIndex = index },
             onShare = { sharePhotos(context, photos.filter { it.id in selectedPhotos }) },
+            onMove = { movePhotos = photos.filter { it.id in selectedPhotos } },
             onDelete = { requestDelete(photos.filter { it.id in selectedPhotos }) }
         )
 
@@ -869,6 +870,7 @@ fun PhotosScreen(
     onSelectAllToggle: () -> Unit,
     onOpen: (Int) -> Unit,
     onShare: () -> Unit,
+    onMove: () -> Unit,
     onDelete: () -> Unit
 ) {
     val selecting = selected.isNotEmpty()
@@ -892,6 +894,9 @@ fun PhotosScreen(
                 },
                 actions = {
                     if (selecting) {
+                        TextButton(onClick = onMove) {
+                            Text("搬移", color = GallerySettings.onTopBar)
+                        }
                         IconButton(onClick = onShare) { Icon(Icons.Default.Share, contentDescription = "分享") }
                         IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "刪除") }
                     } else {
@@ -1166,6 +1171,7 @@ fun ViewerScreen(
     var rotation by remember { mutableStateOf(0f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var saving by remember { mutableStateOf(false) }
+    var askSaveOnExit by remember { mutableStateOf(false) }
 
     LaunchedEffect(pagerState.currentPage) {
         scale = 1f
@@ -1173,17 +1179,33 @@ fun ViewerScreen(
         offset = Offset.Zero
     }
 
-    fun saveEdited(photo: Photo, bitmap: Bitmap) {
+    fun rotateAndSave(photo: Photo, thenClose: Boolean) {
+        if (saving) return
         saving = true
         scope.launch {
+            val bmp = withContext(Dispatchers.IO) { GalleryRepo.loadBitmap(resolver, photo, 2400) }
+            if (bmp == null) {
+                saving = false
+                toast(context, "讀取失敗")
+                return@launch
+            }
+            val matrix = Matrix().apply { postRotate(rotation) }
+            val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
             val name = "change_" + photo.name
             val uri = withContext(Dispatchers.IO) {
-                saveImageTo(resolver, bitmap, photo.relativePath, name)
+                saveImageTo(resolver, rotated, photo.relativePath, name)
             }
             saving = false
             toast(context, if (uri == null) "儲存失敗" else "已儲存：" + name)
+            rotation = 0f
+            if (thenClose) onClose()
         }
     }
+
+    val backAction = {
+        if (rotation != 0f) askSaveOnExit = true else onClose()
+    }
+    androidx.activity.compose.BackHandler(enabled = rotation != 0f) { askSaveOnExit = true }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
@@ -1248,7 +1270,7 @@ fun ViewerScreen(
                 .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, "返回", tint = Color.White) }
+            IconButton(onClick = backAction) { Icon(Icons.Default.ArrowBack, "返回", tint = Color.White) }
             Text(
                 (pagerState.currentPage + 1).toString() + " / " + photos.size,
                 color = Color.White,
@@ -1258,19 +1280,9 @@ fun ViewerScreen(
             val photo = current
             if (photo != null) {
                 if (rotation != 0f) {
-                    IconButton(onClick = {
-                        if (!saving) {
-                            scope.launch {
-                                val bmp = withContext(Dispatchers.IO) { GalleryRepo.loadBitmap(resolver, photo, 2400) }
-                                if (bmp == null) toast(context, "讀取失敗") else {
-                                    val matrix = Matrix().apply { postRotate(rotation) }
-                                    val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
-                                    saveEdited(photo, rotated)
-                                    rotation = 0f
-                                }
-                            }
-                        }
-                    }) { Icon(Icons.Default.Check, "儲存", tint = Color.White) }
+                    IconButton(onClick = { rotateAndSave(photo, false) }) {
+                        Icon(Icons.Default.Check, "儲存旋轉", tint = Color.White)
+                    }
                 }
                 IconButton(onClick = { onSaveAs(photo) }) {
                     Icon(Icons.Default.Add, "另存新檔", tint = Color.White)
@@ -1280,6 +1292,27 @@ fun ViewerScreen(
                 IconButton(onClick = { onDelete(photo) }) { Icon(Icons.Default.Delete, "刪除", tint = Color.White) }
             }
         }
+    }
+
+    if (askSaveOnExit) {
+        val photo = current
+        AlertDialog(
+            onDismissRequest = { askSaveOnExit = false },
+            title = { Text("儲存旋轉結果？") },
+            text = { Text("這張圖片有未儲存的旋轉。要存成新的 change_ 檔嗎？（原圖不會被改）", fontSize = 13.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    askSaveOnExit = false
+                    if (photo != null) rotateAndSave(photo, true) else onClose()
+                }) { Text("儲存並離開") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { askSaveOnExit = false; rotation = 0f; onClose() }) { Text("不儲存") }
+                    TextButton(onClick = { askSaveOnExit = false }) { Text("取消") }
+                }
+            }
+        )
     }
 }
 
@@ -1368,7 +1401,15 @@ fun InfoLine(label: String, value: String) {
 fun Thumb(photo: Photo, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val bitmap by produceState<Bitmap?>(initialValue = null, photo.id) {
-        value = withContext(Dispatchers.IO) { GalleryRepo.loadBitmap(context.contentResolver, photo, 500) }
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.loadThumbnail(
+                    GalleryRepo.uriOf(photo),
+                    android.util.Size(480, 480),
+                    null
+                )
+            }.getOrNull() ?: GalleryRepo.loadBitmap(context.contentResolver, photo, 500)
+        }
     }
     val bmp = bitmap
     if (bmp == null) Box(modifier = modifier.background(Color(0xFFE0E0E0)))
