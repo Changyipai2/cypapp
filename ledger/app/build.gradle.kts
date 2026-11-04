@@ -3,7 +3,32 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// ---- 簽章設定（簽章金鑰放在 repo 的 signing/，可隨時替換）----
+val signingDir = rootProject.file("../signing")
+val keystoreB64 = File(signingDir, "keystore.b64")
+val signingPropsFile = File(signingDir, "signing.properties")
+val hasRepoSigning = keystoreB64.exists() && signingPropsFile.exists()
+val signingProps = java.util.Properties()
+if (hasRepoSigning) {
+    signingPropsFile.inputStream().use { signingProps.load(it) }
+    val p12 = File(signingDir, "keystore.p12")
+    if (!p12.exists()) {
+        p12.writeBytes(java.util.Base64.getMimeDecoder().decode(keystoreB64.readText().trim()))
+    }
+}
+
 android {
+    signingConfigs {
+        if (hasRepoSigning) {
+            create("repo") {
+                storeFile = File(signingDir, "keystore.p12")
+                storePassword = signingProps.getProperty("storePassword")
+                keyAlias = signingProps.getProperty("keyAlias")
+                keyPassword = signingProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     namespace = "com.dsh.ledger"
     compileSdk = 34
 
@@ -16,8 +41,12 @@ android {
     }
 
     buildTypes {
+        if (hasRepoSigning) {
+            getByName("debug") { signingConfig = signingConfigs.getByName("repo") }
+        }
         release {
             isMinifyEnabled = false
+            if (hasRepoSigning) { signingConfig = signingConfigs.getByName("repo") }
         }
     }
 
