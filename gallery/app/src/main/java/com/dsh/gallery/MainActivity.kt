@@ -507,7 +507,8 @@ fun GalleryRoot() {
             onOpen = { index -> viewerIndex = index },
             onShare = { sharePhotos(context, photos.filter { it.id in selectedPhotos }) },
             onMove = { movePhotos = photos.filter { it.id in selectedPhotos } },
-            onDelete = { requestDelete(photos.filter { it.id in selectedPhotos }) }
+            onDelete = { requestDelete(photos.filter { it.id in selectedPhotos }) },
+            onClearSelection = { selectedPhotos = emptySet() }
         )
 
         GalleryScreen.TRASH -> TrashScreen(
@@ -521,6 +522,7 @@ fun GalleryRoot() {
                 val total = Trash.items.map { it.id }.toSet()
                 selectedTrash = if (selectedTrash.size == total.size) emptySet() else total
             },
+            onClearSelection = { selectedTrash = emptySet() },
             onRestore = { restoreTrash(selectedTrash) },
             onDeleteForever = { deleteTrashForever(selectedTrash) },
             onEmptyAll = { deleteTrashForever(Trash.items.map { it.id }.toSet()) }
@@ -871,7 +873,8 @@ fun PhotosScreen(
     onOpen: (Int) -> Unit,
     onShare: () -> Unit,
     onMove: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onClearSelection: () -> Unit
 ) {
     val selecting = selected.isNotEmpty()
     Scaffold(
@@ -885,15 +888,18 @@ fun PhotosScreen(
                     actionIconContentColor = GallerySettings.onTopBar
                 ),
                 navigationIcon = {
-                    IconButton(onClick = { if (selecting) onSelectAllToggle() else onBack() }) {
+                    IconButton(onClick = { if (selecting) onClearSelection() else onBack() }) {
                         Icon(
-                            if (selecting) Icons.Default.Check else Icons.Default.ArrowBack,
+                            if (selecting) Icons.Default.Close else Icons.Default.ArrowBack,
                             contentDescription = "返回"
                         )
                     }
                 },
                 actions = {
                     if (selecting) {
+                        IconButton(onClick = onSelectAllToggle) {
+                            Icon(Icons.Default.Check, contentDescription = "全選")
+                        }
                         TextButton(onClick = onMove) {
                             Text("搬移", color = GallerySettings.onTopBar)
                         }
@@ -944,6 +950,7 @@ fun TrashScreen(
     onBack: () -> Unit,
     onToggle: (Long) -> Unit,
     onSelectAllToggle: () -> Unit,
+    onClearSelection: () -> Unit,
     onRestore: () -> Unit,
     onDeleteForever: () -> Unit,
     onEmptyAll: () -> Unit
@@ -968,12 +975,15 @@ fun TrashScreen(
                     actionIconContentColor = GallerySettings.onTopBar
                 ),
                 navigationIcon = {
-                    IconButton(onClick = { if (selecting) onSelectAllToggle() else onBack() }) {
-                        Icon(if (selecting) Icons.Default.Check else Icons.Default.ArrowBack, contentDescription = "返回")
+                    IconButton(onClick = { if (selecting) onClearSelection() else onBack() }) {
+                        Icon(if (selecting) Icons.Default.Close else Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
                     if (selecting) {
+                        IconButton(onClick = onSelectAllToggle) {
+                            Icon(Icons.Default.Check, contentDescription = "全選")
+                        }
                         IconButton(onClick = onRestore) { Icon(Icons.Default.Refresh, contentDescription = "還原") }
                         IconButton(onClick = onDeleteForever) { Icon(Icons.Default.Delete, contentDescription = "永久刪除") }
                     } else if (trashItems.isNotEmpty()) {
