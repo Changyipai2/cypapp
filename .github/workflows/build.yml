@@ -25,11 +25,13 @@ jobs:
           key: debug-keystore-v1
       - name: Assemble
         working-directory: ledger
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        run: gradle :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: ledger-debug-apk
-          path: ledger/app/build/outputs/apk/debug/*.apk
+          path: |
+            ledger/app/build/outputs/apk/debug/*.apk
+            ledger/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
   gallery:
@@ -51,10 +53,12 @@ jobs:
           key: debug-keystore-v1
       - name: Assemble
         working-directory: gallery
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        run: gradle :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: gallery-debug-apk
-          path: gallery/app/build/outputs/apk/debug/*.apk
+          path: |
+            gallery/app/build/outputs/apk/debug/*.apk
+            gallery/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
