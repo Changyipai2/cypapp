@@ -14,3 +14,5 @@
 
 > 注意：換簽章後使用者必須先卸載舊版才能安裝（簽章不同 Android 會拒絕覆蓋）。
 > `keystore.b64` 放在公開 repo 等於任何人都能簽出「你的 App」，要給別人用之前務必換成私密流程（例如 CI secret）。
+
+<!-- signing verification: 1793798236 -->
