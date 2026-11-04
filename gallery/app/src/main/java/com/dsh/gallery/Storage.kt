@@ -222,3 +222,44 @@ fun saveCopyToNewFolder(context: Context, folderName: String, photos: List<Photo
     }
     return n
 }
+
+/** 存到指定的 RELATIVE_PATH，可自訂檔名（用於「儲存」成 change_ 檔） */
+fun saveImageTo(
+    resolver: ContentResolver,
+    bitmap: Bitmap,
+    relativePath: String,
+    displayName: String,
+    quality: Int = 95
+): Uri? {
+    val values = android.content.ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+        if (relativePath.isNotBlank()) put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+        put(MediaStore.Images.Media.IS_PENDING, 1)
+    }
+    val uri = runCatching {
+        resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+    }.getOrNull() ?: return null
+    val ok = runCatching {
+        resolver.openOutputStream(uri)?.use { stream -> bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream) }
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        true
+    }.getOrDefault(false)
+    if (!ok) {
+        runCatching { resolver.delete(uri, null, null) }
+        return null
+    }
+    return uri
+}
+
+/** 把 Bitmap 寫進 SAF 目錄（另存新檔用） */
+fun saveBitmapIntoDoc(context: Context, target: DocumentFile, bitmap: Bitmap, name: String): Boolean =
+    runCatching {
+        val file = target.createFile("image/jpeg", name) ?: return false
+        context.contentResolver.openOutputStream(file.uri)?.use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+        }
+        true
+    }.getOrDefault(false)
