@@ -171,13 +171,14 @@ private data class PendingAction(
 
 /** 兩指以上才處理縮放/旋轉/平移，單指事件不消耗，保留給翻頁與上下滑動 */
 private suspend fun PointerInputScope.multiTouch(
-    onTransform: (zoom: Float, rotation: Float, pan: Offset) -> Unit
+    onTransform: (zoom: Float, rotation: Float, pan: Offset) -> Unit,
+    onEnd: () -> Unit = {}
 ) {
     awaitEachGesture {
         awaitFirstDown(requireUnconsumed = false)
         while (true) {
             val event = awaitPointerEvent()
-            if (event.changes.none { it.pressed }) break
+            if (event.changes.none { it.pressed }) { onEnd(); break }
             if (event.changes.count { it.pressed } >= 2) {
                 val zoom = event.calculateZoom()
                 val rotation = event.calculateRotation()
@@ -1382,7 +1383,7 @@ fun ViewerScreen(
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = scale == 1f
+            userScrollEnabled = scale <= 1.02f
         ) { page ->
             val photo = photos[page]
             val bitmap by produceState<Bitmap?>(initialValue = null, photo.id) {
@@ -1392,20 +1393,29 @@ fun ViewerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(photo.id) {
-                        multiTouch { zoom, rot, pan ->
-                            scale = (scale * zoom).coerceIn(1f, 8f)
-                            rotation += rot
-                            if (scale > 1f) offset += pan else offset = Offset.Zero
-                        }
+                        multiTouch(
+                            onTransform = { zoom, rot, pan ->
+                                scale = (scale * zoom).coerceIn(1f, 8f)
+                                rotation += rot
+                                if (scale > 1.02f) offset += pan else offset = Offset.Zero
+                            },
+                            onEnd = {
+                                // 旋轉手勢常帶著極小縮放，會讓 scale 停在 1.0001 → 翻頁被鎖住
+                                if (scale < 1.06f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                }
+                            }
+                        )
                     }
                     .pointerInput(photo.id, pagerState.currentPage) {
                         verticalSwipe(
                             thresholdPx = size.height * 0.22f,
                             onUp = {
-                                if (scale == 1f && rotation == 0f) onDelete(photo)
+                                if (scale <= 1.02f) onDelete(photo)
                             },
                             onDown = {
-                                if (scale == 1f && rotation == 0f) onShare(photo)
+                                if (scale <= 1.02f) onShare(photo)
                             }
                         )
                     },
