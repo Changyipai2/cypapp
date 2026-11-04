@@ -1567,6 +1567,9 @@ fun ViewerScreen(
                 IconButton(onClick = { startSaveAs(photo) }) {
                     Icon(Icons.Default.Add, "另存新檔", tint = onViewerBarColor())
                 }
+                IconButton(onClick = { onShare(photo) }) {
+                    Icon(Icons.Default.Share, "分享", tint = onViewerBarColor())
+                }
                 IconButton(onClick = { onEdit(photo) }) { Icon(Icons.Default.Edit, "編輯", tint = onViewerBarColor()) }
                 IconButton(onClick = { onDetails(photo) }) { Icon(Icons.Default.Info, "資訊", tint = onViewerBarColor()) }
                 IconButton(onClick = { onDelete(photo) }) { Icon(Icons.Default.Delete, "刪除", tint = onViewerBarColor()) }
