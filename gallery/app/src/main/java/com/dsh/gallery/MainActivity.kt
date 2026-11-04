@@ -283,7 +283,6 @@ fun GalleryRoot() {
                     scope.launch {
                         withContext(Dispatchers.IO) { Trash.add(context, resolver, action.photos) }
                         selectedPhotos = emptySet()
-                        viewerIndex = -1
                         reload++
                         toast(context, "已移到垃圾桶")
                     }
@@ -298,7 +297,6 @@ fun GalleryRoot() {
                     Trash.forget(action.ids)
                     selectedTrash = emptySet()
                     selectedPhotos = emptySet()
-                    viewerIndex = -1
                     reload++
                     toast(context, "已刪除")
                 }
@@ -362,7 +360,6 @@ fun GalleryRoot() {
                 ok
             }
             selectedPhotos = emptySet()
-            viewerIndex = -1
             reload++
             toast(
                 context,
@@ -492,6 +489,10 @@ fun GalleryRoot() {
     LaunchedEffect(folder, reload) {
         val bucket = folder?.bucketId
         photos = withContext(Dispatchers.IO) { GalleryRepo.query(resolver, bucket) }
+    }
+    // 刪除後留在檢視器：位置自動夾到有效範圍，全部刪完才關閉
+    LaunchedEffect(photos.size) {
+        if (viewerIndex >= photos.size) viewerIndex = photos.size - 1
     }
 
     when (screen) {
