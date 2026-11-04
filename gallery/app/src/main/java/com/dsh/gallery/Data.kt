@@ -134,11 +134,32 @@ object GalleryRepo {
             bitmap = resolver.openInputStream(uriOf(photo))?.use { BitmapFactory.decodeStream(it, null, opts) }
         }
         val loaded = bitmap ?: return null
-        val degrees = photo.orientation % 360
+        var degrees = photo.orientation % 360
+        if (degrees == 0) degrees = exifDegrees(resolver, uriOf(photo))
         if (degrees == 0) return loaded
         val matrix = Matrix()
         matrix.postRotate(degrees.toFloat())
         return Bitmap.createBitmap(loaded, 0, 0, loaded.width, loaded.height, matrix, true)
+    }
+
+    /** 由 EXIF 讀實際旋轉角度（MediaStore ORIENTATION 常是 0） */
+    fun exifDegrees(resolver: ContentResolver, uri: Uri): Int {
+        var degrees = 0
+        runCatching {
+            resolver.openInputStream(uri)?.use { input ->
+                val exif = androidx.exifinterface.media.ExifInterface(input)
+                degrees = when (exif.getAttributeInt(
+                    androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                    androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL
+                )) {
+                    androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                    androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                    androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                    else -> 0
+                }
+            }
+        }
+        return degrees
     }
 
     fun saveBitmap(resolver: ContentResolver, bitmap: Bitmap, folderName: String, quality: Int = 95): Uri? {
