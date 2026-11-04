@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 記帳卡 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M33,37 h42 a6,6 0 0 1 6,6 v22 a6,6 0 0 1 -6,6 h-42 a6,6 0 0 1 -6,-6 v-22 a6,6 0 0 1 6,-6 z" />
+    <!-- 條列 -->
+    <path
+        android:fillColor="#00695C"
+        android:pathData="M35,46 h22 v4 h-22 z" />
+    <path
+        android:fillColor="#4DB6AC"
+        android:pathData="M35,55 h15 v3.5 h-15 z" />
+    <path
+        android:fillColor="#4DB6AC"
+        android:pathData="M35,62 h18 v3.5 h-18 z" />
+    <!-- 金幣 -->
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M73,53 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0 z" />
+    <path
+        android:fillColor="#8D6E00"
+        android:pathData="M67,51.5 h12 v2.6 h-12 z M67,56 h12 v2.6 h-12 z" />
+</vector>
