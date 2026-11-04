@@ -53,11 +53,11 @@ object GallerySettings {
 
     fun setTopBar(color: Int) { topBarColor = color; save() }
     fun setBottomBar(color: Int) { bottomBarColor = color; save() }
-    fun setFolderColumns(n: Int) { folderColumns = n.coerceIn(2, 10); save() }
-    fun setPhotoColumns(n: Int) { photoColumns = n.coerceIn(2, 10); save() }
-    fun setTrashColumns(n: Int) { trashColumns = n.coerceIn(2, 10); save() }
-    fun setDeleteBehavior(mode: String) { deleteBehavior = mode; save() }
-    fun setRootTreeUri(uri: String) { rootTreeUri = uri; save() }
+    fun applyFolderColumns(n: Int) { folderColumns = n.coerceIn(2, 10); save() }
+    fun applyPhotoColumns(n: Int) { photoColumns = n.coerceIn(2, 10); save() }
+    fun applyTrashColumns(n: Int) { trashColumns = n.coerceIn(2, 10); save() }
+    fun applyDeleteBehavior(mode: String) { deleteBehavior = mode; save() }
+    fun applyRootTreeUri(uri: String) { rootTreeUri = uri; save() }
 
     private fun save() {
         val o = JSONObject()
