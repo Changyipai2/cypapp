@@ -22,6 +22,9 @@ object GallerySettings {
         private set
     var trashColumns by mutableStateOf(3)
         private set
+    /** system = 跟隨系統 / light = 淺色 / dark = 深色 / custom = 自訂 Bar 顏色 */
+    var themeMode by mutableStateOf("custom")
+        private set
     /** ask = 每次詢問 / trash = 直接進垃圾桶 / permanent = 直接永久刪除 */
     var deleteBehavior by mutableStateOf("ask")
         private set
@@ -46,6 +49,7 @@ object GallerySettings {
             folderColumns = o.optInt("folderColumns", folderColumns).coerceIn(2, 10)
             photoColumns = o.optInt("photoColumns", photoColumns).coerceIn(2, 10)
             trashColumns = o.optInt("trashColumns", trashColumns).coerceIn(2, 10)
+            themeMode = o.optString("themeMode", "custom")
             deleteBehavior = o.optString("deleteBehavior", "ask")
             rootTreeUri = o.optString("rootTreeUri", "")
         }
@@ -57,6 +61,7 @@ object GallerySettings {
     fun applyPhotoColumns(n: Int) { photoColumns = n.coerceIn(2, 10); save() }
     fun applyTrashColumns(n: Int) { trashColumns = n.coerceIn(2, 10); save() }
     fun applyDeleteBehavior(mode: String) { deleteBehavior = mode; save() }
+    fun applyThemeMode(mode: String) { themeMode = mode; save() }
     fun applyRootTreeUri(uri: String) { rootTreeUri = uri; save() }
 
     private fun save() {
@@ -66,6 +71,7 @@ object GallerySettings {
             .put("folderColumns", folderColumns)
             .put("photoColumns", photoColumns)
             .put("trashColumns", trashColumns)
+            .put("themeMode", themeMode)
             .put("deleteBehavior", deleteBehavior)
             .put("rootTreeUri", rootTreeUri)
         file?.let { runCatching { it.writeText(o.toString()) } }
