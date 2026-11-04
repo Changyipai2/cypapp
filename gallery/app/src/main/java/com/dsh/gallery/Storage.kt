@@ -22,7 +22,9 @@ data class TrashItem(
     val size: Long,
     val mime: String,
     val trashedAt: Long,
-    val thumbPath: String
+    val thumbPath: String,
+    /** 非空表示這是 App 自己保管的垃圾桶（可直接還原，不經系統對話框） */
+    val localPath: String = ""
 )
 
 data class SafFolder(val uriString: String, val name: String)
@@ -74,15 +76,60 @@ object Trash {
         save()
     }
 
+    /** 把照片搬進 App 自己的垃圾桶目錄（同一台裝置，直接可還原、不跳系統確認） */
+    fun addLocal(context: Context, resolver: ContentResolver, photos: List<Photo>): Int {
+        val dir = File(context.filesDir, "trash_files").apply { mkdirs() }
+        val thumbDir = File(context.cacheDir, "trashthumbs").apply { mkdirs() }
+        val now = System.currentTimeMillis()
+        val added = mutableListOf<TrashItem>()
+        photos.forEach { p ->
+            runCatching {
+                val out = File(dir, now.toString() + "_" + p.id + "_" + p.name)
+                resolver.openInputStream(GalleryRepo.uriOf(p))?.use { input ->
+                    out.outputStream().use { output -> input.copyTo(output) }
+                }
+                val thumb = File(thumbDir, "t" + p.id + "_" + now + ".jpg")
+                runCatching {
+                    val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
+                    val bmp = android.graphics.BitmapFactory.decodeFile(out.absolutePath, opts) ?: return@runCatching
+                    thumb.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 80, it) }
+                }
+                added.add(
+                    TrashItem(
+                        id = p.id,
+                        name = p.name,
+                        bucket = p.relativePath,
+                        size = p.sizeBytes,
+                        mime = p.mime,
+                        trashedAt = now,
+                        thumbPath = thumb.absolutePath,
+                        localPath = out.absolutePath
+                    )
+                )
+            }
+        }
+        if (added.isNotEmpty()) {
+            items = items + added
+            save()
+        }
+        return added.size
+    }
+
     fun forget(ids: Set<Long>) {
         val gone = items.filter { it.id in ids }
-        gone.forEach { runCatching { File(it.thumbPath).delete() } }
+        gone.forEach {
+            runCatching { File(it.thumbPath).delete() }
+            if (it.localPath.isNotBlank()) runCatching { File(it.localPath).delete() }
+        }
         items = items.filterNot { it.id in ids }
         save()
     }
 
     fun clearAll() {
-        items.forEach { runCatching { File(it.thumbPath).delete() } }
+        items.forEach {
+            runCatching { File(it.thumbPath).delete() }
+            if (it.localPath.isNotBlank()) runCatching { File(it.localPath).delete() }
+        }
         items = emptyList()
         save()
     }
@@ -100,6 +147,7 @@ object Trash {
                     .put("mime", it.mime)
                     .put("at", it.trashedAt)
                     .put("thumb", it.thumbPath)
+                    .put("local", it.localPath)
             )
         }
         root.put("items", arr)
@@ -122,7 +170,8 @@ object Trash {
                     size = o.optLong("size"),
                     mime = o.optString("mime", "image/jpeg"),
                     trashedAt = o.optLong("at"),
-                    thumbPath = thumb
+                    thumbPath = thumb,
+                    localPath = o.optString("local", "")
                 )
             )
         }
@@ -263,3 +312,29 @@ fun saveBitmapIntoDoc(context: Context, target: DocumentFile, bitmap: Bitmap, na
         }
         true
     }.getOrDefault(false)
+
+/** 直接把位元組寫回 MediaStore（還原 App 垃圾桶用，不重新編碼） */
+fun insertBytes(
+    resolver: ContentResolver,
+    relativePath: String,
+    displayName: String,
+    mime: String,
+    bytes: ByteArray
+): Uri? {
+    val values = android.content.ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+        put(MediaStore.Images.Media.MIME_TYPE, mime.ifBlank { "image/jpeg" })
+        if (relativePath.isNotBlank()) put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+        put(MediaStore.Images.Media.IS_PENDING, 1)
+    }
+    val uri = runCatching { resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) }.getOrNull() ?: return null
+    val ok = runCatching {
+        resolver.openOutputStream(uri)?.use { it.write(bytes) }
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        true
+    }.getOrDefault(false)
+    if (!ok) { runCatching { resolver.delete(uri, null, null) }; return null }
+    return uri
+}
