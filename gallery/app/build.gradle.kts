@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -8,12 +11,12 @@ val signingDir = rootProject.file("../signing")
 val keystoreB64 = File(signingDir, "keystore.b64")
 val signingPropsFile = File(signingDir, "signing.properties")
 val hasRepoSigning = keystoreB64.exists() && signingPropsFile.exists()
-val signingProps = java.util.Properties()
+val signingProps = Properties()
 if (hasRepoSigning) {
     signingPropsFile.inputStream().use { signingProps.load(it) }
     val p12 = File(signingDir, "keystore.p12")
     if (!p12.exists()) {
-        p12.writeBytes(java.util.Base64.getMimeDecoder().decode(keystoreB64.readText().trim()))
+        p12.writeBytes(Base64.getMimeDecoder().decode(keystoreB64.readText().trim()))
     }
 }
 
