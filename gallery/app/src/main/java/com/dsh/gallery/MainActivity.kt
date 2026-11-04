@@ -352,17 +352,6 @@ fun GalleryRoot() {
         launch(req.intentSender, PendingAction(PendingKind.DELETE), "無法開啟刪除確認")
     }
 
-    // 依設定決定刪除行為
-    fun requestDelete(list: List<Photo>) {
-        if (list.isEmpty()) return
-        val silent = hasAllFiles(context)
-        when (GallerySettings.deleteBehavior) {
-            "trash" -> if (silent) deleteSilently(list, true) else trashPhotos(list)
-            "permanent" -> if (silent) deleteSilently(list, false) else deletePermanently(list)
-            else -> { askNotAgain = false; askDelete = list }
-        }
-    }
-
     fun deleteSilently(list: List<Photo>, toTrash: Boolean) {
         if (list.isEmpty()) return
         scope.launch {
@@ -391,6 +380,17 @@ fun GalleryRoot() {
             return
         }
         launch(req.intentSender, PendingAction(PendingKind.RESTORE, ids = ids), "無法開啟還原確認")
+    }
+
+    // 依設定決定刪除行為
+    fun requestDelete(list: List<Photo>) {
+        if (list.isEmpty()) return
+        val silent = hasAllFiles(context)
+        when (GallerySettings.deleteBehavior) {
+            "trash" -> if (silent) deleteSilently(list, true) else trashPhotos(list)
+            "permanent" -> if (silent) deleteSilently(list, false) else deletePermanently(list)
+            else -> { askNotAgain = false; askDelete = list }
+        }
     }
 
     fun restoreTrash(ids: Set<Long>) {
