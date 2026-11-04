@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -85,6 +86,9 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
     var history by remember { mutableStateOf(listOf<Bitmap>()) }
     var tool by remember { mutableStateOf(EditTool.NONE) }
     var brushColor by remember { mutableStateOf(Color(0xFFE53935)) }
+    var highlighter by remember { mutableStateOf(false) }
+    var displayScale by remember { mutableStateOf(1f) }
+    var showSaveAs by remember { mutableStateOf(false) }
     var brushSize by remember { mutableStateOf(14f) }
     var strokePoints by remember { mutableStateOf(listOf<Offset>()) }
     var cropRect by remember { mutableStateOf<Rect?>(null) }
@@ -128,17 +132,18 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
                             saving = true
                             scope.launch {
                                 val uri = withContext(Dispatchers.IO) {
-                                    GalleryRepo.saveBitmap(resolver, current, "圖片櫃")
+                                    saveImageTo(resolver, current, photo.relativePath, "change_" + photo.name)
                                 }
                                 saving = false
                                 if (uri == null) {
                                     Toast.makeText(context, "儲存失敗", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "已存到 Pictures/圖片櫃", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "已儲存 change_" + photo.name, Toast.LENGTH_LONG).show()
                                     onSaved()
                                 }
                             }
                         }) { Text("儲存") }
+                        TextButton(onClick = { showSaveAs = true }) { Text("另存") }
                     }
                 }
             )
@@ -154,6 +159,7 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .graphicsLayer { scaleX = displayScale; scaleY = displayScale }
                     .onSizeChanged { boxSize = it }
                     .pointerInput(tool, bmp, boxSize) {
                         when (tool) {
@@ -172,8 +178,9 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
                                             val canvas = android.graphics.Canvas(mutable)
                                             val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                                             paint.color = brushColor.toArgb()
+                                            paint.alpha = if (highlighter) 90 else 255
                                             paint.style = android.graphics.Paint.Style.STROKE
-                                            paint.strokeWidth = (brushSize / scaleFit).coerceAtLeast(1f)
+                                            paint.strokeWidth = ((if (highlighter) brushSize * 2.2f else brushSize) / scaleFit).coerceAtLeast(1f)
                                             paint.strokeCap = android.graphics.Paint.Cap.ROUND
                                             paint.strokeJoin = android.graphics.Paint.Join.ROUND
                                             val path = android.graphics.Path()
@@ -241,8 +248,12 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
                         }
                         drawPath(
                             path = preview,
-                            color = brushColor,
-                            style = Stroke(width = brushSize, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            color = brushColor.copy(alpha = if (highlighter) 0.35f else 1f),
+                            style = Stroke(
+                                width = if (highlighter) brushSize * 2.2f else brushSize,
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
                         )
                     }
                     cropRect?.let { r ->
@@ -252,6 +263,22 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
                             size = Size(r.width, r.height),
                             style = Stroke(width = 3f)
                         )
+                        val sx = r.width / 3f
+                        val sy = r.height / 3f
+                        for (i in 1..2) {
+                            drawLine(
+                                color = Color.White.copy(alpha = 0.7f),
+                                start = Offset(r.left + sx * i, r.top),
+                                end = Offset(r.left + sx * i, r.bottom),
+                                strokeWidth = 1.5f
+                            )
+                            drawLine(
+                                color = Color.White.copy(alpha = 0.7f),
+                                start = Offset(r.left, r.top + sy * i),
+                                end = Offset(r.right, r.top + sy * i),
+                                strokeWidth = 1.5f
+                            )
+                        }
                     }
                 }
             }
@@ -320,6 +347,10 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
                         history = history.dropLast(1)
                     }
                 }
+                ToolButton("螢光筆", highlighter) {
+                    highlighter = !highlighter
+                    tool = EditTool.BRUSH
+                }
                 ToolButton("畫筆", tool == EditTool.BRUSH) {
                     tool = if (tool == EditTool.BRUSH) EditTool.NONE else EditTool.BRUSH
                     cropRect = null
@@ -344,22 +375,8 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
                     matrix.postScale(-1f, 1f)
                     applyEdit(source, Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true))
                 }
-                ToolButton("縮小", false) {
-                    val source = bmp ?: return@ToolButton
-                    val maxSide = 1600
-                    val longest = maxOf(source.width, source.height)
-                    if (longest > maxSide) {
-                        val ratio = maxSide.toFloat() / longest.toFloat()
-                        applyEdit(
-                            source,
-                            Bitmap.createScaledBitmap(
-                                source,
-                                (source.width * ratio).toInt().coerceAtLeast(1),
-                                (source.height * ratio).toInt().coerceAtLeast(1),
-                                true
-                            )
-                        )
-                    }
+                ToolButton("縮小", displayScale < 1f) {
+                    displayScale = if (displayScale < 1f) 1f else 0.7f
                 }
             }
         }
@@ -398,6 +415,39 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
                 }) { Text("加入") }
             },
             dismissButton = { TextButton(onClick = { textAnchor = null }) { Text("取消") } }
+        )
+    }
+
+    if (showSaveAs) {
+        val snapshot = working
+        TargetFolderDialog(
+            title = "另存新檔",
+            count = 1,
+            onDismiss = { showSaveAs = false },
+            onCreate = { name ->
+                showSaveAs = false
+                val doc = DocStore.createFolder(context, name)
+                if (doc == null) {
+                    toast(context, "請先授權 Pictures 資料夾")
+                } else if (snapshot == null) {
+                    toast(context, "沒有可儲存的圖片")
+                } else if (saveBitmapIntoDoc(context, doc, snapshot, "change_" + photo.name.substringBeforeLast('.'))) {
+                    toast(context, "已存到 " + name)
+                } else {
+                    toast(context, "另存失敗")
+                }
+            },
+            onPick = { doc ->
+                showSaveAs = false
+                if (snapshot == null) {
+                    toast(context, "沒有可儲存的圖片")
+                } else if (saveBitmapIntoDoc(context, doc, snapshot, "change_" + photo.name.substringBeforeLast('.'))) {
+                    toast(context, "已存到 " + (doc.name ?: "資料夾"))
+                    onSaved()
+                } else {
+                    toast(context, "另存失敗")
+                }
+            }
         )
     }
 }
