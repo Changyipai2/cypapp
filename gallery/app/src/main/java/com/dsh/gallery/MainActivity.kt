@@ -923,7 +923,14 @@ fun FoldersScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(entry.name, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1)
+                                            Text(
+                                                entry.name,
+                                                fontWeight = GallerySettings.weightOf(),
+                                                fontSize = 13.sp,
+                                                maxLines = 1,
+                                                color = GallerySettings.customTextColor()
+                                                    ?: MaterialTheme.colorScheme.onSurface
+                                            )
                                             val count = when (entry) {
                                                 is FolderEntry.Media -> entry.folder.count.toString() + " 張"
                                                 is FolderEntry.App -> "App 資料夾"
@@ -931,7 +938,9 @@ fun FoldersScreen(
                                             Text(
                                                 count,
                                                 fontSize = 12.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                fontWeight = GallerySettings.weightOf(),
+                                                color = GallerySettings.customTextColor()
+                                                    ?: MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }
@@ -1167,6 +1176,15 @@ fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
             ThemeRow("深色", "dark")
             ThemeRow("自訂（用下面的 Bar 顏色）", "custom")
             Spacer(Modifier.height(10.dp))
+            Text("文字顏色", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextColorRow()
+            Spacer(Modifier.height(6.dp))
+            Text("字重", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            WeightRow("變細", 0)
+            WeightRow("一般", 1)
+            WeightRow("加粗", 2)
+
+            Spacer(Modifier.height(10.dp))
             Text("上方 Bar 顏色", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             PaletteRow(current = GallerySettings.topBarColor) { GallerySettings.setTopBar(it) }
             Spacer(Modifier.height(10.dp))
@@ -1251,6 +1269,68 @@ fun ThemeRow(label: String, mode: String) {
         RadioButton(
             selected = GallerySettings.themeMode == mode,
             onClick = { GallerySettings.applyThemeMode(mode) }
+        )
+        Text(label, fontSize = 14.sp)
+    }
+}
+
+val TEXT_PALETTE: List<Int> = listOf(
+    0xFFFFFFFF.toInt(), 0xFFEEEEEE.toInt(), 0xFFBDBDBD.toInt(), 0xFF000000.toInt(),
+    0xFF212121.toInt(), 0xFFFFD54F.toInt(), 0xFFFF8A65.toInt(), 0xFF80CBC4.toInt(),
+    0xFF64B5F6.toInt(), 0xFFF48FB1.toInt()
+)
+
+@Composable
+fun TextColorRow() {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 跟隨主題
+            Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
+                color = if (GallerySettings.textColor == 0) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.padding(3.dp)
+                    .combinedClickable(
+                        onClick = { GallerySettings.applyTextColor(0) },
+                        onLongClick = { GallerySettings.applyTextColor(0) }
+                    )
+            ) {
+                Text("跟隨主題", fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+            }
+        }
+        Row(modifier = Modifier.padding(vertical = 4.dp)) {
+            TEXT_PALETTE.forEach { color ->
+                Box(
+                    modifier = Modifier.padding(3.dp).size(26.dp)
+                        .background(Color(color), CircleShape)
+                        .combinedClickable(
+                            onClick = { GallerySettings.applyTextColor(color) },
+                            onLongClick = { GallerySettings.applyTextColor(color) }
+                        )
+                ) {
+                    if (GallerySettings.textColor == color) {
+                        Text("✓", color = Color(0xFF00C853), fontSize = 13.sp, modifier = Modifier.align(Alignment.Center))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WeightRow(label: String, weight: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .combinedClickable(
+                onClick = { GallerySettings.applyTextWeight(weight) },
+                onLongClick = { GallerySettings.applyTextWeight(weight) }
+            )
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = GallerySettings.textWeight == weight,
+            onClick = { GallerySettings.applyTextWeight(weight) }
         )
         Text(label, fontSize = 14.sp)
     }
