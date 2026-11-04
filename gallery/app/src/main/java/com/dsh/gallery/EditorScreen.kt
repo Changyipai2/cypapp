@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -88,7 +90,25 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
     var brushColor by remember { mutableStateOf(Color(0xFFE53935)) }
     var highlighter by remember { mutableStateOf(false) }
     var displayScale by remember { mutableStateOf(1f) }
-    var showSaveAs by remember { mutableStateOf(false) }
+    var pendingSaveAs by remember { mutableStateOf<Bitmap?>(null) }
+
+    val saveAsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data
+        val bmp = pendingSaveAs
+        pendingSaveAs = null
+        if (result.resultCode == android.app.Activity.RESULT_OK && uri != null && bmp != null) {
+            val ok = runCatching {
+                context.contentResolver.openOutputStream(uri)?.use {
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 95, it)
+                }
+                true
+            }.getOrDefault(false)
+            toast(context, if (ok) "已另存新檔" else "另存失敗")
+            if (ok) onSaved()
+        }
+    }
     var brushSize by remember { mutableStateOf(14f) }
     var strokePoints by remember { mutableStateOf(listOf<Offset>()) }
     var cropRect by remember { mutableStateOf<Rect?>(null) }
@@ -143,7 +163,22 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
                                 }
                             }
                         }) { Text("儲存") }
-                        TextButton(onClick = { showSaveAs = true }) { Text("另存") }
+                        TextButton(onClick = {
+                            val snapshot = working
+                            if (snapshot == null) {
+                                toast(context, "沒有可儲存的圖片")
+                            } else {
+                                pendingSaveAs = snapshot
+                                runCatching {
+                                    saveAsLauncher.launch(
+                                        saveAsIntent(photo.relativePath, "change_" + photo.name.substringBeforeLast('.'))
+                                    )
+                                }.onFailure {
+                                    pendingSaveAs = null
+                                    toast(context, "無法開啟儲存對話框")
+                                }
+                            }
+                        }) { Text("另存") }
                     }
                 }
             )
@@ -418,38 +453,6 @@ fun EditorScreen(photo: Photo, onClose: () -> Unit, onSaved: () -> Unit) {
         )
     }
 
-    if (showSaveAs) {
-        val snapshot = working
-        TargetFolderDialog(
-            title = "另存新檔",
-            count = 1,
-            onDismiss = { showSaveAs = false },
-            onCreate = { name ->
-                showSaveAs = false
-                val doc = DocStore.createFolder(context, name)
-                if (doc == null) {
-                    toast(context, "請先授權 Pictures 資料夾")
-                } else if (snapshot == null) {
-                    toast(context, "沒有可儲存的圖片")
-                } else if (saveBitmapIntoDoc(context, doc, snapshot, "change_" + photo.name.substringBeforeLast('.'))) {
-                    toast(context, "已存到 " + name)
-                } else {
-                    toast(context, "另存失敗")
-                }
-            },
-            onPick = { doc ->
-                showSaveAs = false
-                if (snapshot == null) {
-                    toast(context, "沒有可儲存的圖片")
-                } else if (saveBitmapIntoDoc(context, doc, snapshot, "change_" + photo.name.substringBeforeLast('.'))) {
-                    toast(context, "已存到 " + (doc.name ?: "資料夾"))
-                    onSaved()
-                } else {
-                    toast(context, "另存失敗")
-                }
-            }
-        )
-    }
 }
 
 @Composable
