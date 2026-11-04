@@ -11,6 +11,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import android.os.Bundle
 import android.provider.MediaStore
 import android.widget.Toast
@@ -137,6 +139,10 @@ fun toast(context: android.content.Context, message: String) {
 }
 
 fun stubPhoto(id: Long): Photo = Photo(id, "", 0L, 0, 0, 0L, "image/jpeg", "", "", 0)
+
+/** 是否已取得「所有檔案存取」→ 刪除時可跳過系統確認 */
+fun hasAllFiles(context: android.content.Context): Boolean =
+    Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()
 
 private enum class GalleryScreen { FOLDERS, PHOTOS, TRASH, SETTINGS }
 
@@ -349,27 +355,91 @@ fun GalleryRoot() {
     // 依設定決定刪除行為
     fun requestDelete(list: List<Photo>) {
         if (list.isEmpty()) return
+        val silent = hasAllFiles(context)
         when (GallerySettings.deleteBehavior) {
-            "trash" -> trashPhotos(list)
-            "permanent" -> deletePermanently(list)
+            "trash" -> if (silent) deleteSilently(list, true) else trashPhotos(list)
+            "permanent" -> if (silent) deleteSilently(list, false) else deletePermanently(list)
             else -> { askNotAgain = false; askDelete = list }
         }
     }
 
-    fun restoreTrash(ids: Set<Long>) {
+    fun deleteSilently(list: List<Photo>, toTrash: Boolean) {
+        if (list.isEmpty()) return
+        scope.launch {
+            val moved = withContext(Dispatchers.IO) {
+                var ok = 0
+                if (toTrash) ok = Trash.addLocal(context, resolver, list)
+                list.forEach { p -> runCatching { resolver.delete(GalleryRepo.uriOf(p), null, null) } }
+                ok
+            }
+            selectedPhotos = emptySet()
+            viewerIndex = -1
+            reload++
+            toast(
+                context,
+                if (toTrash) "已移到垃圾桶 " + moved + " 張（可還原）" else "已刪除 " + list.size + " 張"
+            )
+        }
+    }
+
+    fun restoreSystemTrash(ids: Set<Long>) {
         if (ids.isEmpty()) return
         val uris = Trash.items.filter { it.id in ids }.map { GalleryRepo.uriOf(stubPhoto(it.id)) }
         val req = mediaTrashRequest(resolver, uris, false)
-        if (req == null) { toast(context, "無法還原"); return }
+        if (req == null) {
+            toast(context, "無法還原（系統垃圾桶）")
+            return
+        }
         launch(req.intentSender, PendingAction(PendingKind.RESTORE, ids = ids), "無法開啟還原確認")
+    }
+
+    fun restoreTrash(ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        val local = Trash.items.filter { it.id in ids && it.localPath.isNotBlank() }
+        val system = Trash.items.filter { it.id in ids && it.localPath.isBlank() }
+        if (local.isEmpty()) {
+            restoreSystemTrash(system.map { it.id }.toSet())
+            return
+        }
+        scope.launch {
+            var ok = 0
+            withContext(Dispatchers.IO) {
+                local.forEach { item ->
+                    runCatching {
+                        val file = java.io.File(item.localPath)
+                        if (!file.exists()) return@runCatching
+                        val bytes = file.readBytes()
+                        val uri = insertBytes(resolver, item.bucket, item.name, item.mime, bytes)
+                        if (uri != null) {
+                            runCatching { file.delete() }
+                            ok++
+                        }
+                    }
+                }
+            }
+            Trash.forget(local.map { it.id }.toSet())
+            selectedTrash = emptySet()
+            reload++
+            toast(context, "已還原 " + ok + " 張")
+            if (system.isNotEmpty()) restoreSystemTrash(system.map { it.id }.toSet())
+        }
     }
 
     fun deleteTrashForever(ids: Set<Long>) {
         if (ids.isEmpty()) return
-        val uris = Trash.items.filter { it.id in ids }.map { GalleryRepo.uriOf(stubPhoto(it.id)) }
+        val localIds = Trash.items.filter { it.id in ids && it.localPath.isNotBlank() }.map { it.id }.toSet()
+        val systemIds = ids - localIds
+        if (localIds.isNotEmpty()) {
+            Trash.forget(localIds)
+            selectedTrash = emptySet()
+            reload++
+            toast(context, "已永久刪除 " + localIds.size + " 張")
+        }
+        if (systemIds.isEmpty()) return
+        val uris = Trash.items.filter { it.id in systemIds }.map { GalleryRepo.uriOf(stubPhoto(it.id)) }
         val req = runCatching { MediaStore.createDeleteRequest(resolver, uris) }.getOrNull()
         if (req == null) { toast(context, "無法永久刪除"); return }
-        launch(req.intentSender, PendingAction(PendingKind.DELETE, ids = ids), "無法開啟刪除確認")
+        launch(req.intentSender, PendingAction(PendingKind.DELETE, ids = systemIds), "無法開啟刪除確認")
     }
 
     fun photosOfEntries(entries: List<FolderEntry>): List<Photo> {
@@ -589,7 +659,7 @@ fun GalleryRoot() {
                 TextButton(onClick = {
                     if (askNotAgain) GallerySettings.applyDeleteBehavior("trash")
                     askDelete = null
-                    trashPhotos(list)
+                    if (askNotAgain && hasAllFiles(context)) deleteSilently(list, true) else trashPhotos(list)
                 }) { Text("移到垃圾桶") }
             },
             dismissButton = {
@@ -597,7 +667,7 @@ fun GalleryRoot() {
                     TextButton(onClick = {
                         if (askNotAgain) GallerySettings.applyDeleteBehavior("permanent")
                         askDelete = null
-                        deletePermanently(list)
+                        if (askNotAgain && hasAllFiles(context)) deleteSilently(list, false) else deletePermanently(list)
                     }) { Text("直接刪除", color = Color(0xFFC62828)) }
                     TextButton(onClick = { askDelete = null }) { Text("取消") }
                 }
@@ -1083,6 +1153,28 @@ fun SettingsScreen(onBack: () -> Unit, onRequestRoot: () -> Unit) {
             BehaviorRow("每次詢問（預設）", "ask")
             BehaviorRow("直接移到垃圾桶", "trash")
             BehaviorRow("直接永久刪除", "permanent")
+
+            Spacer(Modifier.height(18.dp))
+            Text("刪除免確認", fontWeight = FontWeight.Bold)
+            val allFiles = hasAllFiles(context)
+            Text(
+                if (allFiles) "已開啟：選了「不再詢問」後，刪除不會再跳系統確認。"
+                else "未開啟：Android 每次刪除仍會問一次。開啟後可完全靜默刪除。",
+                fontSize = 12.sp, color = Color.Gray
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = {
+                if (!allFiles) {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:" + context.packageName)
+                            )
+                        )
+                    }
+                }
+            }) { Text(if (allFiles) "已開啟全域檔案存取" else "開啟全域檔案存取") }
 
             Spacer(Modifier.height(18.dp))
             Text("資料夾授權", fontWeight = FontWeight.Bold)
