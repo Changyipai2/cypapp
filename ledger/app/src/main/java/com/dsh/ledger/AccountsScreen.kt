@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -125,15 +126,32 @@ fun AccountsScreen() {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    var revealed by remember(acc.id) { mutableStateOf(false) }
+                    LaunchedEffect(revealed) {
+                        if (revealed) {
+                            kotlinx.coroutines.delay(6000)
+                            revealed = false
+                        }
+                    }
                     Column(Modifier.weight(1f)) {
                         Text(acc.bankName, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                        val idText = if (acc.idNo.isBlank()) "" else
+                            " ・ 身分證 " + (if (revealed) acc.idNo else maskIdNo(acc.idNo))
+                        val codeText = if (acc.userCode.isBlank()) "" else
+                            " ・ 代號 " + (if (revealed) acc.userCode else maskCode(acc.userCode))
                         Text(
-                            acc.currency + " ・ 末四碼 " + acc.accountTail.ifBlank { "----" } +
-                                if (acc.idNo.isNotBlank()) " ・ 身分證末碼 " + acc.idNo.takeLast(3) +
-                                    (if (acc.userCode.isNotBlank()) " ・ 代號 " + acc.userCode.take(2) + "****" else "") else "",
+                            acc.currency + " ・ 末四碼 " + acc.accountTail.ifBlank { "----" } + idText + codeText,
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    if (acc.idNo.isNotBlank() || acc.userCode.isNotBlank()) {
+                        IconButton(onClick = { revealed = !revealed }) {
+                            Icon(
+                                painterResource(if (revealed) R.drawable.ic_eye_off else R.drawable.ic_eye),
+                                contentDescription = if (revealed) "隱藏" else "顯示（6 秒後自動隱藏）"
+                            )
+                        }
                     }
                     if (acc.loginUrl.isNotBlank()) {
                         OutlinedButton(onClick = { openAccount = acc }) { Text("登入", fontSize = 13.sp) }
@@ -289,3 +307,11 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
 }
+
+/** 身分證字號打碼：保留首碼與末三碼 */
+private fun maskIdNo(s: String): String =
+    if (s.length <= 4) "****" else s.take(1) + "******" + s.takeLast(3)
+
+/** 用戶代號打碼：保留前兩碼 */
+private fun maskCode(s: String): String =
+    if (s.length <= 2) "****" else s.take(2) + "****"
