@@ -181,8 +181,7 @@ fun AccountsScreen() {
 
 @Composable
 fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
-    var bankIndex by remember { mutableStateOf(0) }
-    var bankName by remember { mutableStateOf(BANK_PRESETS[0].first) }
+    var bankName by remember { mutableStateOf(BANK_PRESETS[0].name) }
     var url by remember { mutableStateOf(BANK_PRESETS[0].loginUrl) }
     var queryUrl by remember { mutableStateOf(BANK_PRESETS[0].queryUrl) }
     var tail by remember { mutableStateOf("") }
