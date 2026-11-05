@@ -144,7 +144,7 @@ class BankWebActivity : ComponentActivity() {
                 textSize = 13f
                 setTextColor(AColor.WHITE)
                 setPadding(dp(10), dp(8), dp(10), dp(8))
-                setOnClickListener { promptThenFill() }
+                setOnClickListener { injectIdentifiers() }
             }
             bar.addView(fillBtn)
         }
@@ -214,7 +214,7 @@ class BankWebActivity : ComponentActivity() {
                         urlInput.setText(url)
                         if (!autoFilled && (idNo.isNotBlank() || userCode.isNotBlank())) {
                             autoFilled = true
-                            Handler(mainLooper).postDelayed({ promptThenFill() }, 700)
+                            Handler(mainLooper).postDelayed({ injectIdentifiers() }, 500)
                         }
                     }
                 }
@@ -260,31 +260,6 @@ class BankWebActivity : ComponentActivity() {
                 if (web.canGoBack()) web.goBack() else finish()
             }
         })
-    }
-
-    /** 指紋／圖形鎖解鎖後，把「身分證字號、用戶代號」帶入登入頁（不含密碼） */
-    private fun promptThenFill() {
-        val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || km == null || km.isDeviceSecure != true) {
-            injectIdentifiers()
-            return
-        }
-        runCatching {
-            val dialog = BiometricPrompt.Builder(this)
-                .setTitle("解鎖以帶入帳號")
-                .setSubtitle("只帶入身分證字號與用戶代號；密碼與 OTP 仍需你本人輸入")
-                .setNegativeButton("取消", mainExecutor) { _, _ -> }
-                .build()
-            dialog.authenticate(
-                CancellationSignal(),
-                mainExecutor,
-                object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult?) {
-                        injectIdentifiers()
-                    }
-                }
-            )
-        }.onFailure { injectIdentifiers() }
     }
 
     private fun injectIdentifiers(attempt: Int = 1) {
