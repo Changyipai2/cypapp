@@ -287,6 +287,7 @@ fun TxEditor(initial: Tx?, onDismiss: () -> Unit) {
     var kind by remember { mutableStateOf(initial?.kind ?: Kind.EXPENSE) }
     var amount by remember { mutableStateOf(initial?.cents?.toYuan() ?: "") }
     var category by remember { mutableStateOf(initial?.category ?: "") }
+    var customCategory by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf(initial?.note ?: "") }
     var date by remember { mutableStateOf(initial?.dateMillis?.toLocalDate() ?: LocalDate.now()) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -353,7 +354,10 @@ fun TxEditor(initial: Tx?, onDismiss: () -> Unit) {
                                 if (selected) MaterialTheme.colorScheme.primary else Color(0xFFE8E8E3),
                                 RoundedCornerShape(16.dp)
                             )
-                            .clickable { category = c }
+                            .clickable {
+                                category = c
+                                customCategory = false
+                            }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                         color = if (selected) Color.White else Color.DarkGray,
                         fontSize = 14.sp
@@ -361,8 +365,12 @@ fun TxEditor(initial: Tx?, onDismiss: () -> Unit) {
                 }
             }
             OutlinedTextField(
-                value = if (categories.contains(category)) "" else category,
-                onValueChange = { category = it },
+                // 只在「使用者自己輸入過的分類」時才顯示文字，避免與上方 chip 同步時把輸入框清掉
+                value = if (customCategory) category else "",
+                onValueChange = {
+                    category = it
+                    customCategory = it.isNotBlank()
+                },
                 label = { Text("自訂分類（選填）") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
