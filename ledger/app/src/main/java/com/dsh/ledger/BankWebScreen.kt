@@ -5,6 +5,7 @@ package com.dsh.ledger
 import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.webkit.CookieManager
@@ -13,10 +14,13 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,29 +31,29 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
 /**
  * App 內建網銀瀏覽器
- * - 有網址列：銀行換網址時你直接貼上正確網址即可，不必等 App 更新
+ * - 頂列只有一行（48dp）；網址列預設收起，按「網址」才展開，把空間留給銀行頁面
  * - 帳密與 OTP 由你本人輸入（App 不讀取、不儲存）
- * - 下載檔案交給系統下載，完成後可在「設定 → 匯入」加入帳本
+ * - 內建瀏覽器若打不開，可按「Chrome」改用系統瀏覽器（鍵盤與自動填入最相容）
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -60,8 +64,10 @@ fun BankWebScreen(
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     var webView by remember { mutableStateOf<WebView?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var showUrlBar by remember { mutableStateOf(false) }
     var urlBar by remember { mutableStateOf(startUrl) }
     var userTyping by remember { mutableStateOf(false) }
     val retryFlag = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
@@ -77,37 +83,57 @@ fun BankWebScreen(
         if (wv != null && wv.canGoBack()) wv.goBack() else onClose()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(title, fontSize = 15.sp) },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        val wv = webView
-                        if (wv != null && wv.canGoBack()) wv.goBack() else onClose()
-                    }) { Icon(Icons.Default.ArrowBack, contentDescription = "返回") }
-                },
-                actions = {
-                    if (!queryUrl.isNullOrBlank()) {
-                        TextButton(onClick = { webView?.loadUrl(queryUrl) }) {
-                            Text("查詢頁", fontSize = 13.sp)
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
-                )
+    Column(modifier = Modifier.fillMaxSize()) {
+        // ── 精簡頂列（48dp）──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(MaterialTheme.colorScheme.primary)
+                .padding(horizontal = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = {
+                val wv = webView
+                if (wv != null && wv.canGoBack()) wv.goBack() else onClose()
+            }) { Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White) }
+            Text(
+                title,
+                color = Color.White,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
+            if (!queryUrl.isNullOrBlank()) {
+                TextButton(onClick = { webView?.loadUrl(queryUrl) }) {
+                    Text("查詢", color = Color.White, fontSize = 12.sp)
+                }
+            }
+            TextButton(onClick = {
+                showUrlBar = !showUrlBar
+                if (!showUrlBar) {
+                    userTyping = false
+                    focusManager.clearFocus()
+                }
+            }) { Text("網址", color = Color.White, fontSize = 12.sp) }
+            TextButton(onClick = {
+                runCatching {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(normalize(urlBar))).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        setPackage("com.android.chrome")
+                    })
+                }.onFailure {
+                    Toast.makeText(context, "找不到 Chrome", Toast.LENGTH_SHORT).show()
+                }
+            }) { Text("Chrome", color = Color.White, fontSize = 12.sp) }
         }
-    ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            // 網址列：可直接手動輸入／貼上銀行實際的登入網址
+
+        // ── 網址列：預設收起 ──
+        if (showUrlBar) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
                     value = urlBar,
@@ -119,17 +145,21 @@ fun BankWebScreen(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = {
                         userTyping = false
+                        focusManager.clearFocus()
                         webView?.loadUrl(normalize(urlBar))
                     })
                 )
                 TextButton(onClick = {
                     userTyping = false
+                    focusManager.clearFocus()
                     webView?.loadUrl(normalize(urlBar))
                 }) { Text("前往", fontSize = 13.sp) }
             }
-            if (loading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
+        }
+
+        if (loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
@@ -141,9 +171,13 @@ fun BankWebScreen(
                         settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                         settings.allowFileAccess = true
                         settings.loadsImagesAutomatically = true
+                        isFocusable = true
+                        isFocusableInTouchMode = true
                         webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                                 loading = true
+                                // 把焦點交還給網頁，避免 Compose 輸入框搶走鍵盤
+                                focusManager.clearFocus(force = true)
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
@@ -151,6 +185,7 @@ fun BankWebScreen(
                                 if (url != null && url != "about:blank") {
                                     if (!userTyping) urlBar = url
                                     retryFlag.set(false)
+                                    view?.requestFocus()
                                 }
                             }
 
