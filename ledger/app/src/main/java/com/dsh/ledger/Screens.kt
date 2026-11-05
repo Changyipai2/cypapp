@@ -286,6 +286,10 @@ fun SettingsScreen() {
             onClick = { confirmClear = true },
             modifier = Modifier.fillMaxWidth()
         ) { Text("清空目前帳本的記錄") }
+        Store.lastImportResult?.let {
+            Spacer(Modifier.height(12.dp))
+            Text("自動匯入：" + it, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+        }
         message?.let {
             Spacer(modifier = Modifier.height(12.dp))
             Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
