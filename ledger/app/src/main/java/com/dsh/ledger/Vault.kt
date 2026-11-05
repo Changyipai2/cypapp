@@ -23,6 +23,7 @@ data class BankAccount(
     val currency: String,      // TWD / USD ...
     val loginUrl: String,      // 網銀登入頁深連結
     val loginId: String,       // 登入帳號（加密存放）
+    val queryUrl: String = "", // 交易查詢頁（登入後一鍵前往）
     val note: String = ""
 )
 
@@ -106,6 +107,7 @@ object Vault {
                         currency = o.optString("currency", "TWD"),
                         loginUrl = o.optString("loginUrl"),
                         loginId = loginId,
+                        queryUrl = o.optString("queryUrl", ""),
                         note = o.optString("note", "")
                     )
                 )
@@ -125,6 +127,7 @@ object Vault {
                     .put("currency", a.currency)
                     .put("loginUrl", a.loginUrl)
                     .put("loginIdEnc", if (a.loginId.isBlank()) "" else encrypt(a.loginId))
+                    .put("queryUrl", a.queryUrl)
                     .put("note", a.note)
             )
         }
