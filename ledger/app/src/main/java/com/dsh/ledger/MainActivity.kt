@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -100,7 +101,7 @@ fun App() {
     var editorOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Tx?>(null) }
     var accountDialog by remember { mutableStateOf(false) }
-    val titles = listOf("簡記帳", "統計", "設定")
+    val titles = listOf("簡記帳", "資產", "統計", "設定")
 
     Scaffold(
         topBar = {
@@ -126,12 +127,18 @@ fun App() {
                 NavigationBarItem(
                     selected = tab == 1,
                     onClick = { tab = 1 },
-                    icon = { Icon(Icons.Default.Info, contentDescription = null) },
-                    label = { Text("統計") }
+                    icon = { Icon(Icons.Default.Star, contentDescription = null) },
+                    label = { Text("資產") }
                 )
                 NavigationBarItem(
                     selected = tab == 2,
                     onClick = { tab = 2 },
+                    icon = { Icon(Icons.Default.Info, contentDescription = null) },
+                    label = { Text("統計") }
+                )
+                NavigationBarItem(
+                    selected = tab == 3,
+                    onClick = { tab = 3 },
                     icon = { Icon(Icons.Default.Settings, contentDescription = null) },
                     label = { Text("設定") }
                 )
@@ -148,7 +155,8 @@ fun App() {
         Box(modifier = Modifier.padding(padding)) {
             when (tab) {
                 0 -> TxList(onEdit = { editing = it; editorOpen = true })
-                1 -> StatsScreen()
+                1 -> AssetsScreen()
+                2 -> StatsScreen()
                 else -> SettingsScreen()
             }
         }
@@ -449,7 +457,7 @@ fun AccountDialog(onDismiss: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            acc.name,
+                            (if (acc.type == AccountType.LIABILITY) "負債 " else "資產 ") + acc.name,
                             color = if (acc.id == Store.currentAccountId) MaterialTheme.colorScheme.primary else Color.DarkGray,
                             fontWeight = if (acc.id == Store.currentAccountId) FontWeight.Bold else FontWeight.Normal
                         )
