@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -514,5 +517,145 @@ fun MappingRow(label: String, value: String, onClick: () -> Unit) {
             modifier = Modifier.weight(1f)
         )
         Text("▾", fontSize = 12.sp, color = Color.Gray)
+    }
+}
+
+/* ---------------- 資產 / 負債 ---------------- */
+
+@Composable
+fun AssetsScreen() {
+    var showTypeDialog by remember { mutableStateOf(false) }
+    val assets = Store.accounts.filter { it.type == AccountType.ASSET }
+    val liabilities = Store.accounts.filter { it.type == AccountType.LIABILITY }
+    val totalA = Store.totalAssets()
+    val totalL = Store.totalLiabilities()
+    val net = totalA - totalL
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // 總覽卡
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(18.dp)) {
+                    Text("淨值（資產 − 負債）", color = Color.White.copy(alpha = .8f), fontSize = 13.sp)
+                    Text(net.toYuan(), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(10.dp))
+                    Row {
+                        Column(Modifier.weight(1f)) {
+                            Text("資產合計", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                            Text(totalA.toYuan(), color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text("負債合計", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                            Text(totalL.toYuan(), color = Color(0xFFFFCDD2), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 資產
+        item {
+            Text("資產（" + assets.size + " 個帳本）", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        }
+        items(assets, key = { "a" + it.id }) { acc -> AccountBalanceRow(acc) }
+
+        // 負債
+        item {
+            Spacer(Modifier.height(4.dp))
+            Text("負債（" + liabilities.size + " 個帳本）", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        }
+        if (liabilities.isEmpty()) {
+            item {
+                Text(
+                    "目前沒有負債帳本。到「設定」把貸款／信用卡帳本標成負債，就會列在這裡。",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            items(liabilities, key = { "l" + it.id }) { acc -> AccountBalanceRow(acc) }
+        }
+
+        item {
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { showTypeDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("設定帳本為資產／負債")
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "資產 = 帳本累計（收入 − 支出）；負債帳本以欠款金額顯示。分類為轉帳的記錄不計入。",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (showTypeDialog) {
+        AlertDialog(
+            onDismissRequest = { showTypeDialog = false },
+            title = { Text("帳本類型") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("點一下切換資產／負債", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Store.accounts.forEach { acc ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable {
+                                    Store.setAccountType(
+                                        acc.id,
+                                        if (acc.type == AccountType.ASSET) AccountType.LIABILITY else AccountType.ASSET
+                                    )
+                                }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (acc.type == AccountType.LIABILITY) "負債" else "資產",
+                                fontSize = 11.sp,
+                                modifier = Modifier.width(42.dp),
+                                color = if (acc.type == AccountType.LIABILITY) Color(0xFFC62828)
+                                else MaterialTheme.colorScheme.primary
+                            )
+                            Text(acc.name, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text(Store.netOf(acc.id).toYuan(), fontSize = 12.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showTypeDialog = false }) { Text("完成") } }
+        )
+    }
+}
+
+@Composable
+fun AccountBalanceRow(acc: Account) {
+    val net = Store.netOf(acc.id)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(acc.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            }
+            Text(
+                if (acc.type == AccountType.LIABILITY) (-net).toYuan() else net.toYuan(),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = when {
+                    acc.type == AccountType.LIABILITY -> Color(0xFFC62828)
+                    net < 0 -> Color(0xFFC62828)
+                    else -> MaterialTheme.colorScheme.primary
+                }
+            )
+        }
     }
 }
