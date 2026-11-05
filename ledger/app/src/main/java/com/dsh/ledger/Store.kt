@@ -30,6 +30,70 @@ object Store {
         if (f.exists()) {
             runCatching { loadFromJson(f.readText()) }
         }
+        // 自動匯入：app 專屬外部目錄若有 import.json，就「合併」進現有帳本（不覆蓋）
+        // 路徑: /sdcard/Android/data/com.dsh.ledger/files/import.json
+        val importFile = File(ctx.getExternalFilesDir(null) ?: return, "import.json")
+        if (importFile.exists()) {
+            val stats = runCatching { mergeFromJson(importFile.readText()) }.getOrNull()
+            if (stats != null) {
+                runCatching { importFile.renameTo(File(importFile.parentFile, "import_done.json")) }
+                lastImportResult = stats
+            }
+        }
+    }
+
+    /** 最近一次自動匯入的結果（給設定頁顯示） */
+    var lastImportResult by mutableStateOf<String?>(null)
+        private set
+
+    /** 合併外部 JSON：帳本依名稱對應，記錄依內容去重建檔 */
+    fun mergeFromJson(text: String): String {
+        val root = JSONObject(text)
+        val inAccs = mutableListOf<Pair<Long, String>>()
+        root.optJSONArray("accounts")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                inAccs.add(o.optLong("id") to o.optString("name"))
+            }
+        }
+        val beforeAccounts = accounts.size
+        val beforeTxs = txs.size
+        val nameToId = accounts.associate { it.name to it.id }.toMutableMap()
+        var nextAcc = (accounts.maxOfOrNull { it.id } ?: 0L) + 1L
+        val idMap = mutableMapOf<Long, Long>()
+        val newAccounts = accounts.toMutableList()
+        inAccs.forEach { (oldId, name) ->
+            val id = nameToId.getOrPut(name) {
+                val created = Account(nextAcc++, name)
+                newAccounts.add(created)
+                nameToId[name] = created.id
+                created.id
+            }
+            idMap[oldId] = id
+        }
+        accounts = newAccounts
+
+        val seen = txs.map { listOf(it.accountId, it.cents, it.kind.name, it.dateMillis, it.category, it.note).joinToString("|") }.toMutableSet()
+        val added = mutableListOf<Tx>()
+        var nextId = (txs.maxOfOrNull { it.id } ?: 0L) + 1L
+        root.optJSONArray("txs")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val accId = idMap[o.optLong("accountId")] ?: continue
+                val kind = if (o.optString("kind", "EXPENSE") == "INCOME") Kind.INCOME else Kind.EXPENSE
+                val cents = o.optLong("cents", 0L)
+                val date = o.optLong("date", 0L)
+                val cat = o.optString("category", "其他")
+                val note = o.optString("note", "")
+                val key = listOf(accId, cents, kind.name, date, cat, note).joinToString("|")
+                if (!seen.add(key)) continue
+                added.add(Tx(nextId++, accId, cents, kind, cat, note, date))
+            }
+        }
+        txs = txs + added
+        save()
+        return "帳本 +" + (accounts.size - beforeAccounts) + "，記錄 +" + added.size +
+            "（現有 " + txs.size + " 筆，原 " + beforeTxs + " 筆）"
     }
 
     fun save() {
