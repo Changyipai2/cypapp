@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Store.init(this)
+        Vault.init(this)
         setContent {
             MaterialTheme(
                 colorScheme = lightColorScheme(
@@ -101,7 +102,7 @@ fun App() {
     var editorOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Tx?>(null) }
     var accountDialog by remember { mutableStateOf(false) }
-    val titles = listOf("簡記帳", "資產", "統計", "設定")
+    val titles = listOf("簡記帳", "資產", "帳戶", "統計", "設定")
 
     Scaffold(
         topBar = {
@@ -133,12 +134,18 @@ fun App() {
                 NavigationBarItem(
                     selected = tab == 2,
                     onClick = { tab = 2 },
-                    icon = { Icon(Icons.Default.Info, contentDescription = null) },
-                    label = { Text("統計") }
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("帳戶") }
                 )
                 NavigationBarItem(
                     selected = tab == 3,
                     onClick = { tab = 3 },
+                    icon = { Icon(Icons.Default.Info, contentDescription = null) },
+                    label = { Text("統計") }
+                )
+                NavigationBarItem(
+                    selected = tab == 4,
+                    onClick = { tab = 4 },
                     icon = { Icon(Icons.Default.Settings, contentDescription = null) },
                     label = { Text("設定") }
                 )
@@ -156,7 +163,8 @@ fun App() {
             when (tab) {
                 0 -> TxList(onEdit = { editing = it; editorOpen = true })
                 1 -> AssetsScreen()
-                2 -> StatsScreen()
+                2 -> AccountsScreen()
+                3 -> StatsScreen()
                 else -> SettingsScreen()
             }
         }
