@@ -48,7 +48,7 @@ class MyAutofillService : AutofillService() {
                 response.addDataset(dataset)
             }
         }
-        callback.onSuccess(if (response.build().fillDatasets == null) null else response.build())
+        callback.onSuccess(response.build())
     }
 
     private fun collectUsernameIds(structure: AssistStructure, out: MutableList<AutofillId>) {
