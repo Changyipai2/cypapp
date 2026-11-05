@@ -67,6 +67,9 @@ class BankWebActivity : ComponentActivity() {
     private var userCode: String = ""
     private var queryUrl: String = ""
     private var autoFilled = false
+    private var flowRunning = false
+    private lateinit var resultView: TextView
+    private lateinit var progressView: android.widget.ProgressBar
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -233,6 +236,16 @@ class BankWebActivity : ComponentActivity() {
             setBackgroundColor(0xFFF1F3F4.toInt())
             setPadding(dp(10), dp(6), dp(10), dp(8))
         }
+        progressView = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = true
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4))
+        }
+        resultView = TextView(this).apply {
+            textSize = 13f
+            visibility = View.GONE
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
         statusView = TextView(this).apply {
             text = "登入後按下面的按鈕，我會自動跳到交易明細並查詢"
             textSize = 12f
@@ -245,8 +258,10 @@ class BankWebActivity : ComponentActivity() {
             setTextColor(AColor.WHITE)
             setBackgroundColor(0xFF00695C.toInt())
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46))
-            setOnClickListener { runAutoFlow() }
+            setOnClickListener { if (!flowRunning) runAutoFlow() }
         }
+        bottom.addView(progressView)
+        bottom.addView(resultView)
         bottom.addView(statusView)
         bottom.addView(runBtn)
         root.addView(bottom)
@@ -264,10 +279,13 @@ class BankWebActivity : ComponentActivity() {
     // ───────── 自動流程 ─────────
 
     private fun runAutoFlow() {
+        flowRunning = true
+        resultView.visibility = View.GONE
+        progressView.visibility = View.VISIBLE
         status("① 檢查登入狀態…")
         js("(function(){return document.querySelector('#CustID')?'LOGIN':'IN';})();") { r ->
             if (r.contains("LOGIN")) {
-                status("還沒登入：請先輸入帳密並按「登入」，登入後再按這顆")
+                finishFlow(false, "還沒登入\n請先輸入帳密並按「登入」，登入成功後再按一次")
             } else {
                 status("② 找「交易明細／帳戶查詢」連結…")
                 findStatement()
@@ -298,7 +316,7 @@ class BankWebActivity : ComponentActivity() {
             } else if (attempt < 4) {
                 post(1500) { findStatement(attempt + 1) }
             } else {
-                status("✗ 找不到明細連結：請手動點進明細頁，再按一次按鈕")
+                finishFlow(false, "找不到「交易明細／帳戶查詢」連結\n請先手動點進明細頁，再按一次按鈕")
             }
         }
     }
@@ -323,7 +341,13 @@ class BankWebActivity : ComponentActivity() {
             "return out.join(' || ');})();"
         js(script) { res ->
             Log.i(TAG, "dropdown " + res)
-            status("④ 下拉：" + res.take(150))
+            val found = res.contains("FOUND_PLACEHOLDER=YES")
+            if (found) {
+                status("④ 已點開下拉，等選項…")
+                finishFlow(false, "已點開帳號下拉（下一步要做選項選擇）\n技術資訊：" + res.take(80))
+            } else {
+                finishFlow(false, "這一頁沒有「請選擇」下拉\n可能不是明細頁，請確認畫面")
+            }
         }
     }
 
@@ -354,7 +378,7 @@ class BankWebActivity : ComponentActivity() {
                 status("④ 選單還沒出現，重試…")
                 post(1800) { fillQueryForm(attempt + 1) }
             } else {
-                status("✗ 找不到「查詢」按鈕：請手動選條件。頁面元件：" + res.take(120))
+                finishFlow(false, "已到明細頁，但找不到「查詢」按鈕\n請手動選帳號與期間後再按一次")
             }
         }
     }
@@ -370,13 +394,28 @@ class BankWebActivity : ComponentActivity() {
         js(script) { res ->
             Log.i(TAG, "export" + attempt + " " + res)
             if (res.contains("CLICK:")) {
-                status("⑤ 已按「" + res.substringAfter("CLICK:") + "」，檔案會下載到 Download")
+                finishFlow(true, "已按「" + res.substringAfter("CLICK:") + "」\n檔案會下載到 Download，之後按「設定 → 匯入」即可記帳")
             } else if (attempt < 4) {
                 post(2500) { probeExport(attempt + 1) }
             } else {
-                status("⑤ 這頁沒有匯出／下載按鈕，需要手動查看")
+                finishFlow(false, "查詢完成，但這頁沒有匯出／下載按鈕\n需要手動查看或截圖給我")
             }
         }
+    }
+
+    /** 流程結束回饋：綠色成功 / 紅色失敗，同時 Toast */
+    private fun finishFlow(ok: Boolean, message: String) {
+        flowRunning = false
+        progressView.visibility = View.GONE
+        resultView.apply {
+            text = (if (ok) "\u2705 完成\n" else "\u26a0\ufe0f 失敗\n") + message
+            setTextColor(if (ok) 0xFF1B5E20.toInt() else 0xFFB71C1C.toInt())
+            setBackgroundColor(if (ok) 0xFFE8F5E9.toInt() else 0xFFFFEBEE.toInt())
+            visibility = View.VISIBLE
+        }
+        status("（流程結束）" + if (ok) "成功" else "失敗")
+        Toast.makeText(this, if (ok) "自動查詢完成" else "自動查詢失敗，請看畫面說明", Toast.LENGTH_LONG).show()
+        Log.i(TAG, "RESULT ok=" + ok + " " + message.replace("\n", " / "))
     }
 
     /** 帶入身分證字號與用戶代號（不含密碼） */
