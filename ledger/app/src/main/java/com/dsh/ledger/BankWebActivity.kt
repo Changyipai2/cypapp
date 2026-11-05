@@ -207,6 +207,7 @@ class BankWebActivity : ComponentActivity() {
             settings.loadsImagesAutomatically = true
             isFocusable = true
             isFocusableInTouchMode = true
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     if (url != null && url != "about:blank") {
