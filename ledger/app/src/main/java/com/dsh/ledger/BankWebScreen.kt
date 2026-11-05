@@ -59,7 +59,7 @@ fun BankWebScreen(
     val context = LocalContext.current
     var webView by remember { mutableStateOf<WebView?>(null) }
     var loading by remember { mutableStateOf(true) }
-    var url by remember { mutableStateOf(startUrl) }
+    val retryFlag = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
 
     BackHandler {
         val wv = webView
@@ -111,6 +111,18 @@ fun BankWebScreen(
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 loading = false
+                            }
+
+                            override fun onReceivedError(
+                                view: WebView?,
+                                request: android.webkit.WebResourceRequest?,
+                                error: android.webkit.WebResourceError?
+                            ) {
+                                loading = false
+                                // 只重試主文件，且只重試一次，避免無限迴圈
+                                if (request?.isForMainFrame == true && retryFlag.compareAndSet(false, true)) {
+                                    view?.postDelayed({ view.reload() }, 800)
+                                }
                             }
                         }
                         CookieManager.getInstance().setAcceptCookie(true)
