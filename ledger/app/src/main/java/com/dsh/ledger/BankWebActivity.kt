@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -286,17 +287,41 @@ class BankWebActivity : ComponentActivity() {
         }.onFailure { injectIdentifiers() }
     }
 
-    private fun injectIdentifiers() {
+    private fun injectIdentifiers(attempt: Int = 1) {
         if (idNo.isBlank() && userCode.isBlank()) return
-        val js = "(function(){function put(sel,val){if(!val){return false;}" +
-            "var el=document.querySelector(sel);if(!el){return false;}if(el.value&&el.value.length>0){return true;}" +
-            "el.focus();el.value=val;el.dispatchEvent(new Event(input,{bubbles:true}));" +
-            "el.dispatchEvent(new Event(change,{bubbles:true}));el.dispatchEvent(new Event(keyup,{bubbles:true}));" +
-            "el.dispatchEvent(new Event(blur,{bubbles:true}));return true;}" +
-            "put(#CustID," + JSONObject.quote(idNo) + ");" +
-            "put(#UserIdKeyin," + JSONObject.quote(userCode) + ");})();"
-        web.evaluateJavascript(js, null)
-        Toast.makeText(this, "已帶入身分證字號與用戶代號（密碼請自行輸入）", Toast.LENGTH_SHORT).show()
+        val js = "(function(){" +
+            "var id=" + JSONObject.quote(idNo) + ", uc=" + JSONObject.quote(userCode) + ";" +
+            "function setv(el,val){var d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');" +
+            "if(d&&d.set){d.set.call(el,val);}else{el.value=val;}" +
+            "el.focus();" +
+            "el.dispatchEvent(new Event('input',{bubbles:true}));" +
+            "el.dispatchEvent(new Event('change',{bubbles:true}));" +
+            "el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true}));" +
+            "el.dispatchEvent(new Event('blur',{bubbles:true}));}" +
+            "function find(sels){for(var i=0;i<sels.length;i++){var e=document.querySelector(sels[i]);if(e){return e;}}return null;}" +
+            "var out=[];" +
+            "var a=find(['#CustID','input[name=CustID]','input[name=CustId]','input[id*=Cust]']);" +
+            "if(!a){out.push('NOID');}else if(id&&(!a.value||a.value.indexOf('*')>=0)){setv(a,id);out.push('ID');}else{out.push('IDSET');}" +
+            "var b=find(['#UserIdKeyin','input[name=UserIdKeyin]','input[id*=UserId]']);" +
+            "if(!b){out.push('NOCODE');}else if(uc&&!b.value){setv(b,uc);out.push('CODE');}else{out.push('CODESET');}" +
+            "return out.join(',');" +
+            "})();"
+        web.evaluateJavascript(js) { raw ->
+            val res = raw?.replace("\"", "") ?: ""
+            Log.i("BankFill", "attempt=" + attempt + " result=" + res)
+            val missing = res.contains("NOID") || res.contains("NOCODE")
+            if (missing && attempt < 6) {
+                Handler(mainLooper).postDelayed({ injectIdentifiers(attempt + 1) }, 1200)
+            } else {
+                val msg = when {
+                    res.contains("NOID") && res.contains("NOCODE") -> "找不到登入欄位，請按「帶入」重試"
+                    res.contains("NOID") -> "已帶入用戶代號（找不到身分證字號欄位）"
+                    res.contains("NOCODE") -> "已帶入身分證字號（找不到用戶代號欄位）"
+                    else -> "已帶入身分證字號與用戶代號（密碼請自行輸入）"
+                }
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun normalize(input: String): String {
