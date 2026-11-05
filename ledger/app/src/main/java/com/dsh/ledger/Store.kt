@@ -50,10 +50,12 @@ object Store {
     fun mergeFromJson(text: String): String {
         val root = JSONObject(text)
         val inAccs = mutableListOf<Pair<Long, String>>()
+        val inAccTypes = mutableMapOf<String, AccountType>()
         root.optJSONArray("accounts")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 inAccs.add(o.optLong("id") to o.optString("name"))
+                if (o.optString("type", "ASSET") == "LIABILITY") inAccTypes[o.optString("name")] = AccountType.LIABILITY
             }
         }
         val beforeAccounts = accounts.size
@@ -64,7 +66,8 @@ object Store {
         val newAccounts = accounts.toMutableList()
         inAccs.forEach { (oldId, name) ->
             val id = nameToId.getOrPut(name) {
-                val created = Account(nextAcc++, name)
+                val inType = inAccTypes[name] ?: AccountType.ASSET
+                val created = Account(nextAcc++, name, inType)
                 newAccounts.add(created)
                 nameToId[name] = created.id
                 created.id
@@ -107,7 +110,7 @@ object Store {
         root.put("currentAccount", currentAccountId)
         val accArr = JSONArray()
         accounts.forEach {
-            accArr.put(JSONObject().put("id", it.id).put("name", it.name))
+            accArr.put(JSONObject().put("id", it.id).put("name", it.name).put("type", it.type.name))
         }
         root.put("accounts", accArr)
         val txArr = JSONArray()
@@ -135,7 +138,13 @@ object Store {
         if (accArr != null) {
             for (i in 0 until accArr.length()) {
                 val o = accArr.getJSONObject(i)
-                accs.add(Account(o.optLong("id", (i + 1).toLong()), o.optString("name", "帳本")))
+                accs.add(
+                    Account(
+                        o.optLong("id", (i + 1).toLong()),
+                        o.optString("name", "帳本"),
+                        if (o.optString("type", "ASSET") == "LIABILITY") AccountType.LIABILITY else AccountType.ASSET
+                    )
+                )
             }
         }
         if (accs.isEmpty()) accs.add(Account(1L, "個人"))
@@ -219,6 +228,23 @@ object Store {
     }
 
     fun replaceAll(text: String) = loadFromJson(text)
+
+    fun setAccountType(id: Long, type: AccountType) {
+        accounts = accounts.map { if (it.id == id) it.copy(type = type) else it }
+        save()
+    }
+
+    /** 某帳本的累計淨額（收入 - 支出），單位分 */
+    fun netOf(accountId: Long): Long =
+        txs.filter { it.accountId == accountId }
+            .sumOf { if (it.kind == Kind.INCOME) it.cents else -it.cents }
+
+    /** 資產合計（ASSET 帳本淨額，負數視為 0 之外的實際值照算） */
+    fun totalAssets(): Long = accounts.filter { it.type == AccountType.ASSET }.sumOf { netOf(it.id) }
+
+    /** 負債合計（LIABILITY 帳本以正數呈現欠款） */
+    fun totalLiabilities(): Long =
+        accounts.filter { it.type == AccountType.LIABILITY }.sumOf { -netOf(it.id) }
 
     fun categoriesOf(kind: Kind): List<String> {
         val base = if (kind == Kind.EXPENSE) DEFAULT_EXPENSE_CATEGORIES else DEFAULT_INCOME_CATEGORIES
