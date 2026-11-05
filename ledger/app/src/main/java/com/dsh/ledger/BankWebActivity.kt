@@ -326,9 +326,11 @@ class BankWebActivity : ComponentActivity() {
             val res = raw?.replace("\"", "") ?: ""
             Log.i("BankFind", "attempt=" + attempt + " result=" + res)
             when {
-                res.contains("CLICK:") -> Toast.makeText(
-                    this, "已開啟：" + res.substringAfter("CLICK:"), Toast.LENGTH_SHORT
-                ).show()
+                res.contains("CLICK:") -> {
+                    Toast.makeText(this, "已開啟：" + res.substringAfter("CLICK:"), Toast.LENGTH_SHORT).show()
+                    Handler(mainLooper).postDelayed({ fillQueryForm() }, 2200)
+                    Handler(mainLooper).postDelayed({ probeExportButton() }, 7000)
+                }
                 attempt < 4 -> Handler(mainLooper).postDelayed({ findStatement(attempt + 1) }, 1600)
                 else -> Toast.makeText(this, "找不到交易明細，請手動點選", Toast.LENGTH_SHORT).show()
             }
@@ -348,6 +350,41 @@ class BankWebActivity : ComponentActivity() {
                 Handler(mainLooper).postDelayed({ findStatement() }, 900)
             }
         }
+    }
+
+    /** 在「帳戶明細／交易明細」頁：自動選帳號與期間，然後按【查詢】；同時把頁面結構寫進 log 方便除錯 */
+    private fun fillQueryForm(attempt: Int = 1) {
+        val js = "(function(){" +
+            "var out=[];" +
+            "var sels=document.querySelectorAll('select');" +
+            "out.push('SELECTS='+sels.length);" +
+            "for(var i=0;i<sels.length;i++){var s=sels[i];var opts=[];" +
+            "for(var j=0;j<Math.min(s.options.length,10);j++){opts.push((s.options[j].text||'').trim());}" +
+            "if(s.options.length>1){s.selectedIndex=1;s.dispatchEvent(new Event('change',{bubbles:true}));}" +
+            "out.push('['+i+']'+(s.name||s.id||'?')+'='+(s.value||'').replace(/\\s+/g,'_')+'/opts:'+opts.join('|'));}" +
+            "var all=document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit]');" +
+            "var names=[];var target=null;" +
+            "for(var k=0;k<all.length;k++){var t=(all[k].innerText||all[k].value||'').trim();" +
+            "if(!t||t.length>14){continue;}names.push(t);" +
+            "if(!target&&(t==='查詢'||t==='確定查詢')){target=all[k];}}" +
+            "out.push('BTNS='+names.join(','));" +
+            "if(target){target.scrollIntoView({block:'center'});target.click();out.push('CLICKED=查詢');}" +
+            "return out.join(' || ');})();"
+        web.evaluateJavascript(js) { raw ->
+            Log.i("BankScan", "attempt=" + attempt + " " + (raw ?: ""))
+            if (attempt < 2) Handler(mainLooper).postDelayed({ fillQueryForm(attempt + 1) }, 1500)
+        }
+    }
+
+    /** 明細跑出來後，找匯出／下載按鈕並寫進 log（不自動按） */
+    private fun probeExportButton() {
+        val js = "(function(){" +
+            "var kw=['匯出','下載','CSV','csv','Excel','EXCEL','存檔'];" +
+            "var all=document.querySelectorAll('button,a,[role=button],input[type=button]');var out=[];" +
+            "for(var i=0;i<all.length;i++){var t=(all[i].innerText||all[i].value||'').trim();" +
+            "if(!t||t.length>16){continue;}for(var k=0;k<kw.length;k++){if(t.indexOf(kw[k])>=0){out.push(t);break;}}}" +
+            "return 'EXPORT='+(out.length?out.join(','):'NONE');})();"
+        web.evaluateJavascript(js) { raw -> Log.i("BankScan", "exportProbe " + (raw ?: "")) }
     }
 
     private fun normalize(input: String): String {
