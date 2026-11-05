@@ -68,6 +68,7 @@ class BankWebActivity : ComponentActivity() {
     private var idNo: String = ""
     private var userCode: String = ""
     private var autoFilled = false
+    private var sawLoginForm = false
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -162,6 +163,14 @@ class BankWebActivity : ComponentActivity() {
             }
             bar.addView(queryBtn)
         }
+        val findBtn = TextView(this).apply {
+            text = "明細"
+            textSize = 13f
+            setTextColor(AColor.WHITE)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnClickListener { findStatement() }
+        }
+        bar.addView(findBtn)
         bar.addView(urlToggle)
         bar.addView(chromeBtn)
         root.addView(bar)
@@ -217,6 +226,7 @@ class BankWebActivity : ComponentActivity() {
                             autoFilled = true
                             Handler(mainLooper).postDelayed({ injectIdentifiers() }, 500)
                         }
+                        Handler(mainLooper).postDelayed({ probeLoginThenFind() }, 1200)
                     }
                 }
 
@@ -296,6 +306,46 @@ class BankWebActivity : ComponentActivity() {
                     else -> "已帶入身分證字號與用戶代號（密碼請自行輸入）"
                 }
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** 登入後自動找「交易明細／帳戶查詢」連結並點開（只用文字比對，不改任何資料） */
+    private fun findStatement(attempt: Int = 1) {
+        val js = "(function(){" +
+            "var kw=['交易明細','帳戶明細','存款明細','交易查詢','帳戶查詢','交易紀錄','明細查詢','存款交易明細'];" +
+            "var nodes=document.querySelectorAll('a,button,[role=button]');" +
+            "for(var i=0;i<nodes.length;i++){" +
+            "var t=(nodes[i].innerText||nodes[i].textContent||'').trim();" +
+            "if(!t||t.length>24){continue;}" +
+            "for(var k=0;k<kw.length;k++){if(t.indexOf(kw[k])>=0){" +
+            "try{nodes[i].scrollIntoView({block:'center'});}catch(e){}" +
+            "nodes[i].click();return 'CLICK:'+t;}}}" +
+            "return 'NOTFOUND';})();"
+        web.evaluateJavascript(js) { raw ->
+            val res = raw?.replace("\"", "") ?: ""
+            Log.i("BankFind", "attempt=" + attempt + " result=" + res)
+            when {
+                res.contains("CLICK:") -> Toast.makeText(
+                    this, "已開啟：" + res.substringAfter("CLICK:"), Toast.LENGTH_SHORT
+                ).show()
+                attempt < 4 -> Handler(mainLooper).postDelayed({ findStatement(attempt + 1) }, 1600)
+                else -> Toast.makeText(this, "找不到交易明細，請手動點選", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** 用 DOM 判斷目前是登入頁還是已登入 */
+    private fun probeLoginThenFind() {
+        val probe = "(function(){return document.querySelector('#CustID')?'LOGIN':'IN';})();"
+        web.evaluateJavascript(probe) { raw ->
+            val res = raw?.replace("\"", "") ?: ""
+            Log.i("BankFind", "probe=" + res)
+            if (res.contains("LOGIN")) {
+                sawLoginForm = true
+            } else if (res.contains("IN") && sawLoginForm) {
+                sawLoginForm = false
+                Handler(mainLooper).postDelayed({ findStatement() }, 900)
             }
         }
     }
