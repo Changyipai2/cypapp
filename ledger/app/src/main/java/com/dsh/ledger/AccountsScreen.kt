@@ -49,9 +49,9 @@ import androidx.compose.ui.unit.sp
 data class BankPreset(val name: String, val loginUrl: String, val queryUrl: String)
 
 val BANK_PRESETS = listOf(
-    BankPreset("國泰世華", "https://www.cathaybk.com.tw/cathaybk/personal/ebanking/login/", ""),
-    BankPreset("台北富邦", "https://ebank.taipeifubon.com.tw/B2C/cfhqu/cfhqu010/Cfhqu010_Home.faces", ""),
-    BankPreset("玉山銀行", "https://ebank.esunbank.com.tw/index.jsp", ""),
+    BankPreset("國泰世華", "https://www.cathaybk.com.tw/cathaybk/personal/", ""),
+    BankPreset("台北富邦", "https://www.fubon.com/banking/", ""),
+    BankPreset("玉山銀行", "https://www.esunbank.com/zh-TW/personal", ""),
     BankPreset("台新 Richart", "https://richart.tw/TSDIB_RichartWeb/RC00/RC000000", ""),
     BankPreset("中國信託", "https://www.ctbcbank.com/twrbo/zh_tw/index.html", ""),
     BankPreset("永豐銀行", "https://mma.sinopac.com/MemberPortal/Member/Login.aspx", ""),
