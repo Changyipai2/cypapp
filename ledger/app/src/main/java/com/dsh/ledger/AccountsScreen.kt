@@ -73,7 +73,10 @@ fun AccountsScreen() {
         if (webAccount != null) {
             runCatching {
                 context.startActivity(
-                    BankWebActivity.intent(context, webAccount.bankName, webAccount.loginUrl, webAccount.queryUrl)
+                    BankWebActivity.intent(
+                        context, webAccount.bankName, webAccount.loginUrl,
+                        webAccount.queryUrl, webAccount.idNo, webAccount.userCode
+                    )
                 )
             }.onFailure {
                 android.widget.Toast.makeText(context, "無法開啟網銀：${it.message}", android.widget.Toast.LENGTH_LONG).show()
@@ -126,7 +129,8 @@ fun AccountsScreen() {
                         Text(acc.bankName, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                         Text(
                             acc.currency + " ・ 末四碼 " + acc.accountTail.ifBlank { "----" } +
-                                if (acc.loginId.isNotBlank()) " ・ 帳號 " + acc.loginId else "",
+                                if (acc.idNo.isNotBlank()) " ・ 身分證末碼 " + acc.idNo.takeLast(3) +
+                                    (if (acc.userCode.isNotBlank()) " ・ 代號 " + acc.userCode else "") else "",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -190,7 +194,8 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
     var url by remember { mutableStateOf(BANK_PRESETS[0].loginUrl) }
     var queryUrl by remember { mutableStateOf(BANK_PRESETS[0].queryUrl) }
     var tail by remember { mutableStateOf("") }
-    var loginId by remember { mutableStateOf("") }
+    var idNo by remember { mutableStateOf("") }
+    var userCode by remember { mutableStateOf("") }
     var currency by remember { mutableStateOf("TWD") }
     var note by remember { mutableStateOf("") }
 
@@ -247,8 +252,14 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = loginId, onValueChange = { loginId = it },
-                    label = { Text("登入帳號（加密儲存，可空白）") }, singleLine = true,
+                    value = idNo, onValueChange = { idNo = it.uppercase().take(10) },
+                    label = { Text("身分證字號（加密儲存，登入頁自動帶入）") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = userCode, onValueChange = { userCode = it },
+                    label = { Text("網銀用戶代號（加密儲存，登入頁自動帶入）") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
@@ -267,8 +278,8 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
                             BankAccount(
                                 id = 0, bankName = bankName.trim(), accountTail = tail.trim(),
                                 currency = currency.ifBlank { "TWD" }, loginUrl = url.trim(),
-                                loginId = loginId.trim(), note = note.trim(),
-                                queryUrl = queryUrl.trim()
+                                note = note.trim(), queryUrl = queryUrl.trim(),
+                                idNo = idNo.trim(), userCode = userCode.trim()
                             )
                         )
                     }
