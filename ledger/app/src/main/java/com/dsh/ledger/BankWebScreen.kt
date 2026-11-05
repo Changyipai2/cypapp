@@ -107,7 +107,6 @@ fun BankWebScreen(
                         settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                         settings.allowFileAccess = true
                         settings.loadsImagesAutomatically = true
-                        settings.userAgentString = settings.userAgentString + " LedgerApp/1.0"
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 loading = false
