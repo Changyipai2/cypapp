@@ -130,7 +130,7 @@ fun AccountsScreen() {
                         Text(
                             acc.currency + " ・ 末四碼 " + acc.accountTail.ifBlank { "----" } +
                                 if (acc.idNo.isNotBlank()) " ・ 身分證末碼 " + acc.idNo.takeLast(3) +
-                                    (if (acc.userCode.isNotBlank()) " ・ 代號 " + acc.userCode else "") else "",
+                                    (if (acc.userCode.isNotBlank()) " ・ 代號 " + acc.userCode.take(2) + "****" else "") else "",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
