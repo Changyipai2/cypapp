@@ -6,14 +6,19 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color as AColor
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
+import android.hardware.biometrics.BiometricPrompt
+import android.os.CancellationSignal
+import android.app.KeyguardManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
@@ -22,6 +27,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import org.json.JSONObject
 
 /**
  * 網銀瀏覽器（獨立 Activity，不經過 Compose，確保點輸入框一定叫得出鍵盤）
@@ -35,18 +41,32 @@ class BankWebActivity : ComponentActivity() {
         private const val EXTRA_TITLE = "title"
         private const val EXTRA_URL = "url"
         private const val EXTRA_QUERY = "query"
+        private const val EXTRA_IDNO = "idNo"
+        private const val EXTRA_UCODE = "userCode"
 
-        fun intent(ctx: Context, title: String, url: String, queryUrl: String): Intent =
+        fun intent(
+            ctx: Context,
+            title: String,
+            url: String,
+            queryUrl: String,
+            idNo: String = "",
+            userCode: String = ""
+        ): Intent =
             Intent(ctx, BankWebActivity::class.java)
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_URL, url)
                 .putExtra(EXTRA_QUERY, queryUrl)
+                .putExtra(EXTRA_IDNO, idNo)
+                .putExtra(EXTRA_UCODE, userCode)
     }
 
     private lateinit var web: WebView
     private lateinit var urlRow: LinearLayout
     private lateinit var urlInput: EditText
     private var currentUrl: String = ""
+    private var idNo: String = ""
+    private var userCode: String = ""
+    private var autoFilled = false
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -57,6 +77,8 @@ class BankWebActivity : ComponentActivity() {
         val startUrl = intent.getStringExtra(EXTRA_URL).orEmpty().ifBlank { "https://www.google.com" }
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "網銀" }
         val queryUrl = intent.getStringExtra(EXTRA_QUERY).orEmpty()
+        idNo = intent.getStringExtra(EXTRA_IDNO).orEmpty()
+        userCode = intent.getStringExtra(EXTRA_UCODE).orEmpty()
         currentUrl = startUrl
 
         val root = LinearLayout(this).apply {
@@ -115,6 +137,16 @@ class BankWebActivity : ComponentActivity() {
         }
         bar.addView(back)
         bar.addView(titleView)
+        if (idNo.isNotBlank() || userCode.isNotBlank()) {
+            val fillBtn = TextView(this).apply {
+                text = "帶入"
+                textSize = 13f
+                setTextColor(AColor.WHITE)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                setOnClickListener { promptThenFill() }
+            }
+            bar.addView(fillBtn)
+        }
         if (queryUrl.isNotBlank()) {
             val queryBtn = TextView(this).apply {
                 text = "查詢"
@@ -179,6 +211,10 @@ class BankWebActivity : ComponentActivity() {
                     if (url != null && url != "about:blank") {
                         currentUrl = url
                         urlInput.setText(url)
+                        if (!autoFilled && (idNo.isNotBlank() || userCode.isNotBlank())) {
+                            autoFilled = true
+                            Handler(mainLooper).postDelayed({ promptThenFill() }, 700)
+                        }
                     }
                 }
 
@@ -223,6 +259,44 @@ class BankWebActivity : ComponentActivity() {
                 if (web.canGoBack()) web.goBack() else finish()
             }
         })
+    }
+
+    /** 指紋／圖形鎖解鎖後，把「身分證字號、用戶代號」帶入登入頁（不含密碼） */
+    private fun promptThenFill() {
+        val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || km == null || km.isDeviceSecure != true) {
+            injectIdentifiers()
+            return
+        }
+        runCatching {
+            val dialog = BiometricPrompt.Builder(this)
+                .setTitle("解鎖以帶入帳號")
+                .setSubtitle("只帶入身分證字號與用戶代號；密碼與 OTP 仍需你本人輸入")
+                .setNegativeButton("取消", mainExecutor) { _, _ -> }
+                .build()
+            dialog.authenticate(
+                CancellationSignal(),
+                mainExecutor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult?) {
+                        injectIdentifiers()
+                    }
+                }
+            )
+        }.onFailure { injectIdentifiers() }
+    }
+
+    private fun injectIdentifiers() {
+        if (idNo.isBlank() && userCode.isBlank()) return
+        val js = "(function(){function put(sel,val){if(!val){return false;}" +
+            "var el=document.querySelector(sel);if(!el){return false;}if(el.value&&el.value.length>0){return true;}" +
+            "el.focus();el.value=val;el.dispatchEvent(new Event(input,{bubbles:true}));" +
+            "el.dispatchEvent(new Event(change,{bubbles:true}));el.dispatchEvent(new Event(keyup,{bubbles:true}));" +
+            "el.dispatchEvent(new Event(blur,{bubbles:true}));return true;}" +
+            "put(#CustID," + JSONObject.quote(idNo) + ");" +
+            "put(#UserIdKeyin," + JSONObject.quote(userCode) + ");})();"
+        web.evaluateJavascript(js, null)
+        Toast.makeText(this, "已帶入身分證字號與用戶代號（密碼請自行輸入）", Toast.LENGTH_SHORT).show()
     }
 
     private fun normalize(input: String): String {
