@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,14 +68,18 @@ fun AccountsScreen() {
     var openAccount by remember { mutableStateOf<BankAccount?>(null) }
 
     val webAccount = openAccount
-    if (webAccount != null) {
-        BankWebScreen(
-            title = webAccount.bankName,
-            startUrl = webAccount.loginUrl,
-            queryUrl = webAccount.queryUrl.ifBlank { null },
-            onClose = { openAccount = null }
-        )
-        return
+    // 改用獨立 Activity 開網銀（Compose 內嵌 WebView 在部分機型叫不出鍵盤）
+    LaunchedEffect(webAccount) {
+        if (webAccount != null) {
+            runCatching {
+                context.startActivity(
+                    BankWebActivity.intent(context, webAccount.bankName, webAccount.loginUrl, webAccount.queryUrl)
+                )
+            }.onFailure {
+                android.widget.Toast.makeText(context, "無法開啟網銀：${it.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+            openAccount = null
+        }
     }
 
     LazyColumn(
