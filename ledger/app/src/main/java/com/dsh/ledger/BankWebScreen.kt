@@ -13,40 +13,43 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
 /**
  * App 內建網銀瀏覽器
- * - 你在此輸入帳密與 OTP（App 不讀取、不儲存任何輸入內容）
- * - 登入後可手動切換到「查詢頁」
- * - 下載檔案會交給系統下載，完成後可回 App 匯入
+ * - 有網址列：銀行換網址時你直接貼上正確網址即可，不必等 App 更新
+ * - 帳密與 OTP 由你本人輸入（App 不讀取、不儲存）
+ * - 下載檔案交給系統下載，完成後可在「設定 → 匯入」加入帳本
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -59,7 +62,15 @@ fun BankWebScreen(
     val context = LocalContext.current
     var webView by remember { mutableStateOf<WebView?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var urlBar by remember { mutableStateOf(startUrl) }
+    var userTyping by remember { mutableStateOf(false) }
     val retryFlag = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+
+    fun normalize(input: String): String {
+        val t = input.trim()
+        if (t.isEmpty()) return t
+        return if (t.contains("://")) t else "https://$t"
+    }
 
     BackHandler {
         val wv = webView
@@ -78,12 +89,12 @@ fun BankWebScreen(
                 },
                 actions = {
                     if (!queryUrl.isNullOrBlank()) {
-                        androidx.compose.material3.TextButton(onClick = {
-                            webView?.loadUrl(queryUrl)
-                        }) { Text("查詢頁", fontSize = 13.sp) }
+                        TextButton(onClick = { webView?.loadUrl(queryUrl) }) {
+                            Text("查詢頁", fontSize = 13.sp)
+                        }
                     }
                 },
-                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,
@@ -93,6 +104,29 @@ fun BankWebScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            // 網址列：可直接手動輸入／貼上銀行實際的登入網址
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = urlBar,
+                    onValueChange = { urlBar = it; userTyping = true },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                    placeholder = { Text("貼上銀行登入網址", fontSize = 12.sp) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = {
+                        userTyping = false
+                        webView?.loadUrl(normalize(urlBar))
+                    })
+                )
+                TextButton(onClick = {
+                    userTyping = false
+                    webView?.loadUrl(normalize(urlBar))
+                }) { Text("前往", fontSize = 13.sp) }
+            }
             if (loading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
@@ -100,11 +134,6 @@ fun BankWebScreen(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).apply {
-                        // 先載入網站首頁建立導覽上下文與 cookie，再前往目標頁（避免 ERR_CACHE_MISS）
-                        val bootstrapUrl = runCatching {
-                            val u = android.net.Uri.parse(startUrl)
-                            u.scheme + "://" + u.host + "/"
-                        }.getOrNull() ?: startUrl
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.databaseEnabled = true
@@ -113,8 +142,16 @@ fun BankWebScreen(
                         settings.allowFileAccess = true
                         settings.loadsImagesAutomatically = true
                         webViewClient = object : WebViewClient() {
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                loading = true
+                            }
+
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 loading = false
+                                if (url != null && url != "about:blank") {
+                                    if (!userTyping) urlBar = url
+                                    retryFlag.set(false)
+                                }
                             }
 
                             override fun onReceivedError(
@@ -123,7 +160,6 @@ fun BankWebScreen(
                                 error: android.webkit.WebResourceError?
                             ) {
                                 loading = false
-                                // 只重試主文件，且只重試一次，避免無限迴圈
                                 if (request?.isForMainFrame == true && retryFlag.compareAndSet(false, true)) {
                                     view?.postDelayed({ view.reload() }, 800)
                                 }
@@ -150,14 +186,7 @@ fun BankWebScreen(
                             }
                         })
                         webView = this
-                        if (bootstrapUrl != startUrl) {
-                            loadUrl(bootstrapUrl)
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                runCatching { loadUrl(startUrl) }
-                            }, 1200)
-                        } else {
-                            loadUrl(startUrl)
-                        }
+                        loadUrl(normalize(startUrl))
                     }
                 }
             )
