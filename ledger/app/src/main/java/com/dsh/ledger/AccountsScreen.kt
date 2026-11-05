@@ -45,15 +45,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** 常用銀行：名稱 + 網銀登入頁 */
+/** 銀行：名稱 / 登入頁 / 交易查詢頁（登入後可一鍵前往） */
+data class BankPreset(val name: String, val loginUrl: String, val queryUrl: String)
+
 val BANK_PRESETS = listOf(
-    Triple("國泰世華", "https://www.cathaybk.com.tw/cathaybk/personal/ebanking/login/", "013"),
-    Triple("台北富邦", "https://ebank.taipeifubon.com.tw/B2C/cfhqu/cfhqu010/Cfhqu010_Home.faces", "012"),
-    Triple("玉山銀行", "https://ebank.esunbank.com.tw/index.jsp", "808"),
-    Triple("台新 Richart", "https://richart.tw/TSDIB_RichartWeb/RC00/RC000000", "812"),
-    Triple("中國信託", "https://www.ctbcbank.com/twrbo/zh_tw/index.html", "822"),
-    Triple("永豐銀行", "https://mma.sinopac.com/MemberPortal/Member/Login.aspx", "807"),
-    Triple("聯邦銀行", "https://netbank.ubot.com.tw/", "803"),
-    Triple("其他", "", "")
+    BankPreset("國泰世華", "https://www.cathaybk.com.tw/cathaybk/personal/ebanking/login/", ""),
+    BankPreset("台北富邦", "https://ebank.taipeifubon.com.tw/B2C/cfhqu/cfhqu010/Cfhqu010_Home.faces", ""),
+    BankPreset("玉山銀行", "https://ebank.esunbank.com.tw/index.jsp", ""),
+    BankPreset("台新 Richart", "https://richart.tw/TSDIB_RichartWeb/RC00/RC000000", ""),
+    BankPreset("中國信託", "https://www.ctbcbank.com/twrbo/zh_tw/index.html", ""),
+    BankPreset("永豐銀行", "https://mma.sinopac.com/MemberPortal/Member/Login.aspx", ""),
+    BankPreset("聯邦銀行", "https://netbank.ubot.com.tw/", ""),
+    BankPreset("其他", "", "")
 )
 
 @Composable
@@ -61,6 +64,18 @@ fun AccountsScreen() {
     val context = LocalContext.current
     var showAdd by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<BankAccount?>(null) }
+    var openAccount by remember { mutableStateOf<BankAccount?>(null) }
+
+    val webAccount = openAccount
+    if (webAccount != null) {
+        BankWebScreen(
+            title = webAccount.bankName,
+            startUrl = webAccount.loginUrl,
+            queryUrl = webAccount.queryUrl.ifBlank { null },
+            onClose = { openAccount = null }
+        )
+        return
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -112,14 +127,7 @@ fun AccountsScreen() {
                         )
                     }
                     if (acc.loginUrl.isNotBlank()) {
-                        OutlinedButton(onClick = {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(acc.loginUrl))
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                )
-                            }
-                        }) { Text("登入", fontSize = 13.sp) }
+                        OutlinedButton(onClick = { openAccount = acc }) { Text("登入", fontSize = 13.sp) }
                     }
                     IconButton(onClick = { confirmDelete = acc }) {
                         Icon(Icons.Default.Delete, contentDescription = "刪除", tint = Color(0xFFC62828))
@@ -175,7 +183,8 @@ fun AccountsScreen() {
 fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
     var bankIndex by remember { mutableStateOf(0) }
     var bankName by remember { mutableStateOf(BANK_PRESETS[0].first) }
-    var url by remember { mutableStateOf(BANK_PRESETS[0].second) }
+    var url by remember { mutableStateOf(BANK_PRESETS[0].loginUrl) }
+    var queryUrl by remember { mutableStateOf(BANK_PRESETS[0].queryUrl) }
     var tail by remember { mutableStateOf("") }
     var loginId by remember { mutableStateOf("") }
     var currency by remember { mutableStateOf("TWD") }
@@ -190,15 +199,15 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
                 Row(modifier = Modifier.padding(vertical = 6.dp)) {
                     BANK_PRESETS.take(3).forEach { b ->
                         TextButton(onClick = {
-                            bankName = b.first; url = b.second
-                        }) { Text(b.first, fontSize = 11.sp) }
+                            bankName = b.name; url = b.loginUrl; queryUrl = b.queryUrl
+                        }) { Text(b.name, fontSize = 11.sp) }
                     }
                 }
                 Row(modifier = Modifier.padding(bottom = 6.dp)) {
                     BANK_PRESETS.drop(3).take(3).forEach { b ->
                         TextButton(onClick = {
-                            bankName = b.first; url = b.second
-                        }) { Text(b.first, fontSize = 11.sp) }
+                            bankName = b.name; url = b.loginUrl; queryUrl = b.queryUrl
+                        }) { Text(b.name, fontSize = 11.sp) }
                     }
                 }
                 OutlinedTextField(
@@ -210,6 +219,12 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
                 OutlinedTextField(
                     value = url, onValueChange = { url = it },
                     label = { Text("網銀登入網址（可空白）") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = queryUrl, onValueChange = { queryUrl = it },
+                    label = { Text("交易查詢頁網址（登入後一鍵前往）") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
@@ -248,7 +263,8 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
                             BankAccount(
                                 id = 0, bankName = bankName.trim(), accountTail = tail.trim(),
                                 currency = currency.ifBlank { "TWD" }, loginUrl = url.trim(),
-                                loginId = loginId.trim(), note = note.trim()
+                                loginId = loginId.trim(), note = note.trim(),
+                                queryUrl = queryUrl.trim()
                             )
                         )
                     }
