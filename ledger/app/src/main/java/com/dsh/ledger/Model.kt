@@ -9,7 +9,9 @@ import java.time.ZoneId
 
 enum class Kind { EXPENSE, INCOME }
 
-data class Account(val id: Long, val name: String)
+enum class AccountType { ASSET, LIABILITY }
+
+data class Account(val id: Long, val name: String, val type: AccountType = AccountType.ASSET)
 
 data class Tx(
     val id: Long,
