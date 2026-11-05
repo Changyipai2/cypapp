@@ -277,24 +277,53 @@ class BankWebActivity : ComponentActivity() {
 
     private fun findStatement(attempt: Int = 1) {
         val script = "(function(){" +
-            "var kw=['交易明細','帳戶明細','存款明細','交易查詢','帳戶查詢','交易紀錄','明細查詢','存款交易明細'];" +
+            "var kw=['臺幣帳戶明細','帳戶明細','交易明細','存款明細','交易查詢','帳戶查詢','交易紀錄','明細查詢'];" +
+            "var bad=['設定','新增','管理','說明','申請','連結','更多'];" +
             "var nodes=document.querySelectorAll('a,button,[role=button]');" +
+            "var best=null,bestScore=-1,bestText='';" +
             "for(var i=0;i<nodes.length;i++){" +
             "var t=(nodes[i].innerText||nodes[i].textContent||'').trim();" +
-            "if(!t||t.length>24){continue;}" +
-            "for(var k=0;k<kw.length;k++){if(t.indexOf(kw[k])>=0){" +
-            "try{nodes[i].scrollIntoView({block:'center'});}catch(e){}" +
-            "nodes[i].click();return 'CLICK:'+t;}}}" +
+            "if(!t||t.length>20){continue;}" +
+            "var skip=false;for(var b=0;b<bad.length;b++){if(t.indexOf(bad[b])>=0){skip=true;break;}}" +
+            "if(skip){continue;}" +
+            "for(var k=0;k<kw.length;k++){" +
+            "var sc=-1;if(t===kw[k]){sc=100-k;}else if(t.indexOf(kw[k])>=0){sc=50-k;}" +
+            "if(sc>bestScore){bestScore=sc;best=nodes[i];bestText=t;}}}" +
+            "if(best){try{best.scrollIntoView({block:'center'});}catch(e){}best.click();return 'CLICK:'+bestText;}" +
             "return 'NOTFOUND';})();"
         js(script) { res ->
             if (res.contains("CLICK:")) {
                 status("③ 已開「" + res.substringAfter("CLICK:") + "」，等頁面…")
-                post(2600) { fillQueryForm() }
+                post(2600) { openFirstDropdown() }
             } else if (attempt < 4) {
                 post(1500) { findStatement(attempt + 1) }
             } else {
                 status("✗ 找不到明細連結：請手動點進明細頁，再按一次按鈕")
             }
+        }
+    }
+
+    /** 點開第一個「請選擇」下拉，並把選項結構寫進 log */
+    private fun openFirstDropdown() {
+        val script = "(function(){" +
+            "var out=[];" +
+            "var els=document.querySelectorAll('div,span,button,input,select,[role=combobox]');" +
+            "var ph=null;" +
+            "for(var i=0;i<els.length;i++){" +
+            "var t=((els[i].innerText||els[i].value||'')+'').trim();" +
+            "if(t==='請選擇'){ph=els[i];break;}}" +
+            "out.push('FOUND_PLACEHOLDER='+(ph?'YES':'NO'));" +
+            "if(ph){try{ph.click();}catch(e){out.push('CLICKERR');}}" +
+            "var cands=[];" +
+            "var all=document.querySelectorAll('li,[role=option],[class*=option],[class*=Option],[class*=item],[class*=Item],[class*=list],[class*=List]');" +
+            "for(var j=0;j<all.length&&cands.length<40;j++){" +
+            "var t2=(all[j].innerText||'').trim();" +
+            "if(t2&&t2.length<=28&&cands.indexOf(t2)<0){cands.push(t2);}}" +
+            "out.push('CANDS='+cands.join('|'));" +
+            "return out.join(' || ');})();"
+        js(script) { res ->
+            Log.i(TAG, "dropdown " + res)
+            status("④ 下拉：" + res.take(150))
         }
     }
 
