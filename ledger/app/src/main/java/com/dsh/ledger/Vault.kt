@@ -22,9 +22,11 @@ data class BankAccount(
     val accountTail: String,   // 末四碼
     val currency: String,      // TWD / USD ...
     val loginUrl: String,      // 網銀登入頁深連結
-    val loginId: String,       // 登入帳號（加密存放）
+    val loginId: String = "",  // 舊欄位（相容用）
     val queryUrl: String = "", // 交易查詢頁（登入後一鍵前往）
-    val note: String = ""
+    val note: String = "",
+    val idNo: String = "",     // 身分證字號（加密存放，自動帶入登入頁）
+    val userCode: String = ""  // 網銀用戶代號（加密存放，自動帶入登入頁）
 )
 
 /**
@@ -99,6 +101,10 @@ object Vault {
                 val o = arr.getJSONObject(i)
                 val encLogin = o.optString("loginIdEnc", "")
                 val loginId = if (encLogin.isBlank()) "" else decrypt(encLogin) ?: ""
+                val encId = o.optString("idNoEnc", "")
+                val idNo = if (encId.isBlank()) "" else decrypt(encId) ?: ""
+                val encCode = o.optString("userCodeEnc", "")
+                val userCode = if (encCode.isBlank()) "" else decrypt(encCode) ?: ""
                 list.add(
                     BankAccount(
                         id = o.optLong("id"),
@@ -108,7 +114,9 @@ object Vault {
                         loginUrl = o.optString("loginUrl"),
                         loginId = loginId,
                         queryUrl = o.optString("queryUrl", ""),
-                        note = o.optString("note", "")
+                        note = o.optString("note", ""),
+                        idNo = idNo,
+                        userCode = userCode
                     )
                 )
             }
@@ -129,6 +137,8 @@ object Vault {
                     .put("loginIdEnc", if (a.loginId.isBlank()) "" else encrypt(a.loginId))
                     .put("queryUrl", a.queryUrl)
                     .put("note", a.note)
+                    .put("idNoEnc", if (a.idNo.isBlank()) "" else encrypt(a.idNo))
+                    .put("userCodeEnc", if (a.userCode.isBlank()) "" else encrypt(a.userCode))
             )
         }
         val root = JSONObject().put("version", 1).put("accounts", arr)
