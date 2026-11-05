@@ -100,6 +100,11 @@ fun BankWebScreen(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).apply {
+                        // 先載入網站首頁建立導覽上下文與 cookie，再前往目標頁（避免 ERR_CACHE_MISS）
+                        val bootstrapUrl = runCatching {
+                            val u = android.net.Uri.parse(startUrl)
+                            u.scheme + "://" + u.host + "/"
+                        }.getOrNull() ?: startUrl
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.databaseEnabled = true
@@ -144,8 +149,15 @@ fun BankWebScreen(
                                 Toast.makeText(ctx, "下載失敗：${it.message}", Toast.LENGTH_SHORT).show()
                             }
                         })
-                        loadUrl(startUrl)
                         webView = this
+                        if (bootstrapUrl != startUrl) {
+                            loadUrl(bootstrapUrl)
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                runCatching { loadUrl(startUrl) }
+                            }, 1200)
+                        } else {
+                            loadUrl(startUrl)
+                        }
                     }
                 }
             )
