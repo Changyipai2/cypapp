@@ -82,7 +82,10 @@ object Vault {
         String(cipher.doFinal(body), Charsets.UTF_8)
     }.getOrNull()
 
-    private fun file(): File = File(dir ?: return File("/dev/null"), PREF)
+    private fun file(): File {
+        val d = dir ?: return File("/dev/null")
+        return File(d, PREF)
+    }
 
     private fun load() {
         val f = file()
