@@ -39,11 +39,12 @@ android {
         applicationId = "com.dsh.ledger"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     buildTypes {
+        getByName("debug") { isDebuggable = true }
         if (hasRepoSigning) {
             getByName("debug") { signingConfig = signingConfigs.getByName("repo") }
         }
