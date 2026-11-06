@@ -638,7 +638,7 @@ class BankWebActivity : ComponentActivity() {
             "var cells=rows[i].querySelectorAll('td,th');" +
             "if(cells.length<2){continue;}" +
             "var arr=[];" +
-            "for(var j=0;j<cells.length&&j<8;j++){var t=(cells[j].innerText||'').trim().replace(/\s+/g,' ');arr.push(t.substring(0,40));}" +
+            "for(var j=0;j<cells.length&&j<8;j++){var t=(cells[j].innerText||'').trim().replace(/[ \t]+/g,' ');arr.push(t.substring(0,40));}" +
             "out.push(arr);}" +
             "LedgerBridge.onTable(JSON.stringify(out));" +
             "return 'ROWS='+out.length;})();"
