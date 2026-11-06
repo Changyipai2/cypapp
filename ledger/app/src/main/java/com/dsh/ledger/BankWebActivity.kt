@@ -498,14 +498,14 @@ class BankWebActivity : ComponentActivity() {
             "var end=''+now.getFullYear()+'-'+p2(now.getMonth()+1)+'-'+p2(now.getDate());" +
             "var st=new Date(now.getTime()-89*86400000);" +
             "var start=''+st.getFullYear()+'-'+p2(st.getMonth()+1)+'-'+p2(st.getDate());" +
-            "var results=[];var pending=accts.length;" +
+            "var results=[];var pending=accts.length;var st=0;" +
             "function done(){if(pending<=0){LedgerBridge.onData(JSON.stringify({accounts:results}));}}" +
             "for(var i=0;i<accts.length;i++){(function(acc){" +
             "fetch('/OnlineBankingApi/ClientBank/Api/ClientBank/B_ACCT_Q_TransferDetail',{method:'POST',credentials:'include'," +
             "headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*'}," +
             "body:JSON.stringify({functionSeqNo:seq(),content:{customerId:cust,queryFilters:[{accountNumber:acc,startDate:start,endDate:end}]}})" +
-            "}).then(function(r){return r.text().then(function(txt){try{return JSON.parse(txt);}catch(e2){return {_raw:txt.substring(0,600)};}});}).then(function(j){" +
-            "results.push({acct:acc,resp:j});" +
+            "}).then(function(r){st=r.status;return r.text().then(function(txt){try{return JSON.parse(txt);}catch(e2){return {_raw:txt.substring(0,300)};}});}).then(function(j){" +
+            "results.push({acct:acc,status:st,resp:j});" +
             "pending--;done();}).catch(function(e){results.push({acct:acc,error:String(e)});pending--;done();});})(accts[i]);}" +
             "return 'STARTED';})();"
         js(script) { status("④ 已送出 API 請求，等回應…") }
@@ -614,13 +614,15 @@ class BankWebActivity : ComponentActivity() {
             "var of=window.fetch;" +
             "if(of){window.fetch=function(input,init){" +
             "var u=(typeof input==='string')?input:(input&&input.url?input.url:'');" +
-            "var r={url:String(u),body:(init&&init.body)?String(init.body).slice(0,400):'',text:'',status:0};" +
+            "var hh='';try{if(init&&init.headers){var H=init.headers;if(typeof H.forEach==='function'){H.forEach(function(v,k){hh+=k+':'+v+';';});}else{hh=JSON.stringify(H);}}}catch(e){}" +
+            "var r={url:String(u),body:(init&&init.body)?String(init.body).slice(0,400):'',text:'',status:0,headers:hh.slice(0,400)};" +
             "window.__DSH.push(r);" +
             "return of.apply(this,arguments).then(function(resp){r.status=resp.status;" +
             "try{resp.clone().text().then(function(t){r.text=String(t).slice(0,2000);}).catch(function(){});}catch(e){}" +
             "return resp;});};}" +
-            "var op=XMLHttpRequest.prototype.open;var sd=XMLHttpRequest.prototype.send;" +
-            "XMLHttpRequest.prototype.open=function(m,u){this.__dsh={url:String(u),body:'',text:'',status:0};window.__DSH.push(this.__dsh);return op.apply(this,arguments);};" +
+            "var op=XMLHttpRequest.prototype.open;var sd=XMLHttpRequest.prototype.send;var srh=XMLHttpRequest.prototype.setRequestHeader;" +
+            "XMLHttpRequest.prototype.setRequestHeader=function(k,v){try{if(this.__hdrs){this.__hdrs.push(k+':'+v);if(this.__dsh){this.__dsh.headers=this.__hdrs.join(';').slice(0,400);}}}catch(e){}return srh.apply(this,arguments);};" +
+            "XMLHttpRequest.prototype.open=function(m,u){this.__dsh={url:String(u),body:'',text:'',status:0,headers:''};this.__hdrs=[];window.__DSH.push(this.__dsh);return op.apply(this,arguments);};" +
             "XMLHttpRequest.prototype.send=function(b){var self=this;" +
             "try{if(self.__dsh){self.__dsh.body=b?String(b).slice(0,400):'';" +
             "self.addEventListener('load',function(){try{self.__dsh.status=self.status;self.__dsh.text=String(self.responseText||'').slice(0,2000);}catch(e){}});}}" +
