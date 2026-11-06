@@ -478,7 +478,7 @@ class BankWebActivity : ComponentActivity() {
         }
     }
 
-    /** 用登入中的 session 直接呼叫銀行 API（不用點任何選單） */
+    /** 用登入中的 session 直接呼叫銀行 API：先取 GetJWT，再帶 Authorization 取明細 */
     private fun directFetch(rawNums: List<String>) {
         val accts = rawNums.map { it.padStart(16, '0') }.distinct()
         val cust = idNo.ifBlank { "" }
@@ -487,7 +487,7 @@ class BankWebActivity : ComponentActivity() {
             return
         }
         val script = "(function(){" +
-            "var cust=" + org.json.JSONObject.quote(cust) + ";" +
+            "var cust=" + JSONObject.quote(cust) + ";" +
             "var accts=" + org.json.JSONArray(accts).toString() + ";" +
             "function p2(n){return (n<10?'0':'')+n;}" +
             "function seq(){var d=new Date();" +
@@ -496,19 +496,26 @@ class BankWebActivity : ComponentActivity() {
             "return ts+h.substring(0,8)+'-'+h.substring(8,12)+'-'+h.substring(12,16)+'-'+h.substring(16,20)+'-'+h.substring(20,32);}" +
             "var now=new Date();" +
             "var end=''+now.getFullYear()+'-'+p2(now.getMonth()+1)+'-'+p2(now.getDate());" +
-            "var st=new Date(now.getTime()-89*86400000);" +
-            "var start=''+st.getFullYear()+'-'+p2(st.getMonth()+1)+'-'+p2(st.getDate());" +
-            "var results=[];var pending=accts.length;var st=0;" +
-            "function done(){if(pending<=0){LedgerBridge.onData(JSON.stringify({accounts:results}));}}" +
+            "var st0=new Date(now.getTime()-89*86400000);" +
+            "var start=''+st0.getFullYear()+'-'+p2(st0.getMonth()+1)+'-'+p2(st0.getDate());" +
+            "fetch('/MyBank/Customized/GetJWT',{credentials:'include',headers:{'Accept':'application/json, text/plain, */*'}})" +
+            ".then(function(r){return r.text();})" +
+            ".then(function(txt){" +
+            "var jwt='';try{var o=JSON.parse(txt);jwt=(o&&o.Data&&o.Data.JwtToken)?o.Data.JwtToken:'';}catch(e){}" +
+            "if(!jwt){LedgerBridge.onData(JSON.stringify({accounts:[],error:'NOJWT:'+txt.substring(0,200)}));return;}" +
+            "var results=[];var pending=accts.length;" +
+            "function done(){if(pending<=0){LedgerBridge.onData(JSON.stringify({accounts:results,jwtLen:jwt.length}));}}" +
             "for(var i=0;i<accts.length;i++){(function(acc){" +
             "fetch('/OnlineBankingApi/ClientBank/Api/ClientBank/B_ACCT_Q_TransferDetail',{method:'POST',credentials:'include'," +
-            "headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*'}," +
+            "headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*','Authorization':'Bearer '+jwt}," +
             "body:JSON.stringify({functionSeqNo:seq(),content:{customerId:cust,queryFilters:[{accountNumber:acc,startDate:start,endDate:end}]}})" +
-            "}).then(function(r){st=r.status;return r.text().then(function(txt){try{return JSON.parse(txt);}catch(e2){return {_raw:txt.substring(0,300)};}});}).then(function(j){" +
-            "results.push({acct:acc,status:st,resp:j});" +
-            "pending--;done();}).catch(function(e){results.push({acct:acc,error:String(e)});pending--;done();});})(accts[i]);}" +
+            "}).then(function(r){var st=r.status;return r.text().then(function(txt2){var j=null;try{j=JSON.parse(txt2);}catch(e2){j={_raw:txt2.substring(0,300)};}return {st:st,j:j};});})" +
+            ".then(function(o){results.push({acct:acc,status:o.st,resp:o.j});pending--;done();})" +
+            ".catch(function(e){results.push({acct:acc,error:String(e)});pending--;done();});})(accts[i]);}" +
+            "})" +
+            ".catch(function(e){LedgerBridge.onData(JSON.stringify({accounts:[],error:'JWTFAIL:'+String(e)}));});" +
             "return 'STARTED';})();"
-        js(script) { status("④ 已送出 API 請求，等回應…") }
+        js(script) { status("④ 取得 JWT 並呼叫 API…") }
     }
 
     /** API 回應 → 匯入帳本（自動略過重複） */
