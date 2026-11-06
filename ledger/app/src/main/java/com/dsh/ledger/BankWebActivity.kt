@@ -234,6 +234,11 @@ class BankWebActivity : ComponentActivity() {
                         Log.e(TAG, "saveBase64 fail", e)
                     }
                 }
+                @android.webkit.JavascriptInterface
+                fun onData(payload: String) {
+                    Log.i(TAG, "DATA len=" + payload.length)
+                    runOnUiThread { handleBankData(payload) }
+                }
             }, "LedgerBridge")
             setDownloadListener(DownloadListener { url, userAgent, _, mimeType, _ ->
                 if (url.startsWith("blob:")) {
@@ -321,7 +326,7 @@ class BankWebActivity : ComponentActivity() {
         })
     }
 
-    // ───────── 自動流程 ─────────
+    // ───────── 自動流程（優先：直接向銀行 API 取資料）─────────
 
     private fun runAutoFlow() {
         flowRunning = true
@@ -332,15 +337,74 @@ class BankWebActivity : ComponentActivity() {
             if (r.contains("LOGIN")) {
                 finishFlow(false, "還沒登入\n請先輸入帳密並按「登入」，登入成功後再按一次")
             } else {
-                js("(function(){var n=0;var els=document.querySelectorAll('div,span,input');for(var i=0;i<els.length;i++){var t=((els[i].innerText||els[i].value||'')+'').trim();if(t==='請選擇'){n++;}}return 'PH='+n;})();") { c ->
-                    if (c.contains("PH=0")) {
-                        status("② 找「交易明細／帳戶查詢」連結…")
-                        findStatement()
+                status("② 找銀行帳號…")
+                scanAccountNumbers { nums ->
+                    if (nums.isNotEmpty()) {
+                        status("② 找到 " + nums.size + " 個帳號，直接向銀行取明細…")
+                        directFetch(nums)
                     } else {
-                        status("② 已在明細頁，直接選條件…")
+                        status("② 畫面上沒有帳號，先打開帳號下拉…")
                         openAccountDropdown()
                     }
                 }
+            }
+        }
+    }
+
+    /** 從頁面 HTML 找 accountNumber；找不到就回空 */
+    private fun scanAccountNumbers(cb: (List<String>) -> Unit) {
+        val script = "(function(){" +
+            "var html=document.documentElement.innerHTML||'';" +
+            "var key='\"accountNumber\":\"';var out=[];var seen={};var i=0;" +
+            "while(true){var k=html.indexOf(key,i);if(k<0){break;}" +
+            "var st=k+key.length;var en=st;" +
+            "while(en<html.length){var c=html.charAt(en);if(c<'0'||c>'9'){break;}en++;}" +
+            "if(en-st>=8){var v=html.substring(st,en);if(!seen[v]){seen[v]=1;out.push(v);}}" +
+            "i=en>k?en:k+1;}" +
+            "return out.join(',');})();"
+        js(script) { res ->
+            val list = res.split(",").map { it.trim() }.filter { it.length >= 8 }
+            cb(list)
+        }
+    }
+
+    private fun openAccountDropdown() {
+        val script = "(function(){" +
+            "var els=document.querySelectorAll('div,span,button,input,[role=combobox]');" +
+            "for(var i=0;i<els.length;i++){" +
+            "var t=((els[i].innerText||els[i].value||'')+'').trim();" +
+            "if(t!=='請選擇'){continue;}" +
+            "if(els[i].offsetParent===null){continue;}" +
+            "try{els[i].click();}catch(e){e=null;}" +
+            "return 'OPEN';}" +
+            "return 'NOPH';})();"
+        js(script) { res ->
+            if (res.contains("OPEN")) {
+                status("③ 已開帳號下拉，讀取帳號…")
+                post(1300) {
+                    val read = "(function(){" +
+                        "var out=[];var els=document.querySelectorAll('*');" +
+                        "for(var i=0;i<els.length;i++){var e=els[i];" +
+                        "if(e.offsetParent===null){continue;}" +
+                        "if(e.children.length>4){continue;}" +
+                        "var t=(e.innerText||'').trim();" +
+                        "if(!t||t.length>32){continue;}" +
+                        "var j=0;while(j<t.length){var c=t.charAt(j);if(c<'0'||c>'9'){break;}j++;}" +
+                        "if(j>=8){var v=t.substring(0,j);if(out.indexOf(v)<0){out.push(v);}}}" +
+                        "return out.join(',');})();"
+                    js(read) { r2 ->
+                        val nums = r2.split(",").map { it.trim() }.filter { it.length >= 8 }
+                        if (nums.isNotEmpty()) {
+                            status("③ 讀到 " + nums.size + " 個帳號，直接取明細…")
+                            directFetch(nums)
+                        } else {
+                            finishFlow(false, "找不到銀行帳號\n請確認停在「臺幣帳戶明細」頁")
+                        }
+                    }
+                }
+            } else {
+                status("③ 這頁沒有下拉，先找「臺幣帳戶明細」…")
+                findStatement()
             }
         }
     }
@@ -378,200 +442,96 @@ class BankWebActivity : ComponentActivity() {
         }
     }
 
-    /** 點開「帳號」下拉（畫面上第一個「請選擇」） */
-    private fun openAccountDropdown() {
+    /** 用登入中的 session 直接呼叫銀行 API（不用點任何選單） */
+    private fun directFetch(rawNums: List<String>) {
+        val accts = rawNums.map { it.padStart(16, '0') }.distinct()
+        val cust = idNo.ifBlank { "" }
+        if (cust.isBlank()) {
+            finishFlow(false, "缺少身分證字號（API 需要）\n請在帳戶資料填上身分證字號")
+            return
+        }
         val script = "(function(){" +
-            "var els=document.querySelectorAll('div,span,button,input,[role=combobox]');" +
-            "for(var i=0;i<els.length;i++){" +
-            "var t=((els[i].innerText||els[i].value||'')+'').trim();" +
-            "if(t!=='請選擇'){continue;}" +
-            "if(els[i].offsetParent===null){continue;}" +
-            "try{els[i].click();}catch(e){e=null;}" +
-            "return 'OPEN';}" +
-            "return 'NOPH';})();"
-        js(script) { res ->
-            if (res.contains("OPEN")) {
-                status("④ 已點開帳號下拉…")
-                post(1000) { pickAccountOption() }
-            } else {
-                finishFlow(false, "這一頁沒有「請選擇」下拉\n請確認是不是停在「臺幣帳戶明細」頁")
+            "var cust=" + org.json.JSONObject.quote(cust) + ";" +
+            "var accts=" + org.json.JSONArray(accts).toString() + ";" +
+            "function p2(n){return (n<10?'0':'')+n;}" +
+            "function seq(){var d=new Date();" +
+            "var ts=''+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+p2(d.getHours())+p2(d.getMinutes())+p2(d.getSeconds());" +
+            "var h='';for(var i=0;i<32;i++){h+='0123456789abcdef'.charAt(Math.floor(Math.random()*16));}" +
+            "return ts+h.substring(0,8)+'-'+h.substring(8,12)+'-'+h.substring(12,16)+'-'+h.substring(16,20)+'-'+h.substring(20,32);}" +
+            "var now=new Date();" +
+            "var end=''+now.getFullYear()+'-'+p2(now.getMonth()+1)+'-'+p2(now.getDate());" +
+            "var st=new Date(now.getTime()-89*86400000);" +
+            "var start=''+st.getFullYear()+'-'+p2(st.getMonth()+1)+'-'+p2(st.getDate());" +
+            "var results=[];var pending=accts.length;" +
+            "function done(){if(pending<=0){LedgerBridge.onData(JSON.stringify({accounts:results}));}}" +
+            "for(var i=0;i<accts.length;i++){(function(acc){" +
+            "fetch('/OnlineBankingApi/ClientBank/Api/ClientBank/B_ACCT_Q_TransferDetail',{method:'POST',credentials:'include'," +
+            "headers:{'Content-Type':'application/json'}," +
+            "body:JSON.stringify({functionSeqNo:seq(),content:{customerId:cust,queryFilters:[{accountNumber:acc,startDate:start,endDate:end}]}})" +
+            "}).then(function(r){return r.json();}).then(function(j){" +
+            "results.push({acct:acc,datas:(j&&j.content&&j.content.datas)?j.content.datas:[]});" +
+            "pending--;done();}).catch(function(e){results.push({acct:acc,error:String(e)});pending--;done();});})(accts[i]);}" +
+            "return 'STARTED';})();"
+        js(script) { status("④ 已送出 API 請求，等回應…") }
+    }
+
+    /** API 回應 → 匯入帳本（自動略過重複） */
+    private fun handleBankData(payload: String) {
+        runCatching {
+            Store.init(applicationContext)
+            val root = org.json.JSONObject(payload)
+            val arr = root.optJSONArray("accounts") ?: org.json.JSONArray()
+            val rows = mutableListOf<Tx>()
+            var total = 0
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val datas = o.optJSONArray("datas") ?: continue
+                for (j in 0 until datas.length()) {
+                    val d = datas.getJSONObject(j)
+                    val details = d.optJSONArray("details") ?: continue
+                    for (k in 0 until details.length()) {
+                        val t = details.getJSONObject(k)
+                        val dateStr = t.optString("accountDate").ifBlank { t.optString("txnDateTime") }
+                        val date = runCatching { java.time.LocalDate.parse(dateStr.take(10)) }.getOrNull() ?: continue
+                        val inc = if (t.isNull("incomeAmt")) 0.0 else t.optDouble("incomeAmt", 0.0)
+                        val exp = if (t.isNull("expendAmt")) 0.0 else t.optDouble("expendAmt", 0.0)
+                        val amount = if (inc > 0.0) inc else exp
+                        val cents = Math.round(amount * 100)
+                        if (cents <= 0) continue
+                        total++
+                        val kind = if (inc > 0.0) Kind.INCOME else Kind.EXPENSE
+                        val note = t.optString("description").ifBlank { "網銀" }
+                        rows.add(
+                            Tx(
+                                id = 0,
+                                accountId = 0,
+                                cents = cents,
+                                kind = kind,
+                                category = "尚未分類",
+                                note = note,
+                                dateMillis = date.toMillis()
+                            )
+                        )
+                    }
+                }
             }
-        }
-    }
-
-    /** 從展開的清單裡選一個帳號（選項長得像 013506089195 長榮航空） */
-    private fun pickAccountOption() {
-        val tail = accountTail
-        val script = "(function(){" +
-            "var tail=" + JSONObject.quote(tail) + ";" +
-            "var els=document.querySelectorAll('*');" +
-            "var first=null,tailHit=null;" +
-            "for(var i=0;i<els.length;i++){var e=els[i];" +
-            "if(e.offsetParent===null){continue;}" +
-            "if(e.children.length>4){continue;}" +
-            "var t=(e.innerText||'').trim();" +
-            "if(!t||t.length>32){continue;}" +
-            "if(!/^[0-9]{8,}/.test(t)){continue;}" +
-            "if(!first){first=e;}" +
-            "if(tail&&t.indexOf(tail)>=0){tailHit=e;break;}}" +
-            "var pick=tailHit||first;" +
-            "if(!pick){return 'NOPICK';}" +
-            "try{pick.click();}catch(e2){pick=null;}" +
-            "return 'PICK:'+((pick&&pick.innerText)||'').trim().slice(0,30);})();"
-        js(script) { res ->
-            if (res.contains("PICK:")) {
-                status("⑤ 已選帳號 " + res.substringAfter("PICK:"))
-                post(1300) { openPeriodDropdown() }
-            } else {
-                finishFlow(false, "帳號下拉裡找不到帳號選項\n請手動選一次帳號")
+            if (rows.isEmpty()) {
+                finishFlow(false, "API 有回應，但沒有交易資料\n（可能查無帳戶或期間內無資料）")
+                return
             }
-        }
-    }
-
-    /** 點開「查詢期間」下拉 */
-    private fun openPeriodDropdown() {
-        val script = "(function(){" +
-            "var els=document.querySelectorAll('div,span,button,input,[role=combobox]');" +
-            "for(var i=0;i<els.length;i++){" +
-            "var t=((els[i].innerText||els[i].value||'')+'').trim();" +
-            "if(t!=='請選擇'){continue;}" +
-            "if(els[i].offsetParent===null){continue;}" +
-            "try{els[i].click();}catch(e){e=null;}" +
-            "return 'OPEN';}" +
-            "return 'NOPH';})();"
-        js(script) { res ->
-            if (res.contains("OPEN")) {
-                status("⑥ 已點開期間下拉…")
-                post(1000) { pickPeriodOption() }
-            } else {
-                status("⑥ 沒有期間下拉，直接按查詢")
-                clickQuery()
+            var target = Store.accounts.firstOrNull { it.name == "國泰世華" }
+            if (target == null) {
+                Store.addAccount("國泰世華")
+                target = Store.accounts.firstOrNull { it.name == "國泰世華" }
             }
+            val accId = target?.id ?: 1L
+            var next = Store.newId()
+            val withIds = rows.map { it.copy(id = next++, accountId = accId) }
+            val added = Store.addImported(withIds)
+            finishFlow(true, "抓回 " + total + " 筆交易，新增 " + added + " 筆到帳本「國泰世華」\n（重複的 " + (total - added) + " 筆自動略過）")
+        }.onFailure {
+            finishFlow(false, "匯入失敗：" + (it.message ?: "未知錯誤"))
         }
-    }
-
-    /** 選期間：近 90 天 → 近 1 年 → 近 30 天 */
-    private fun pickPeriodOption() {
-        val script = "(function(){" +
-            "var want=['近 90 天','近90天','近 1 年','近1年','近 30 天','近30天'];" +
-            "var els=document.querySelectorAll('*');" +
-            "for(var w=0;w<want.length;w++){" +
-            "for(var i=0;i<els.length;i++){var e=els[i];" +
-            "if(e.offsetParent===null){continue;}" +
-            "if(e.children.length>3){continue;}" +
-            "var t=(e.innerText||'').trim();" +
-            "if(t===want[w]){try{e.click();}catch(e2){e2=null;}" +
-            "return 'PICK:'+t;}}}" +
-            "return 'NOPICK';})();"
-        js(script) { res ->
-            if (res.contains("PICK:")) {
-                status("⑦ 已選期間 " + res.substringAfter("PICK:"))
-                post(1200) { clickQuery() }
-            } else {
-                status("⑦ 期間選不到，直接按查詢")
-                clickQuery()
-            }
-        }
-    }
-
-    private fun clickQuery(attempt: Int = 1) {
-        val script = "(function(){" +
-            "var all=document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit]');" +
-            "for(var i=0;i<all.length;i++){" +
-            "var t=(all[i].innerText||all[i].value||'').trim();" +
-            "if(t==='查詢'||t==='確定查詢'){try{all[i].scrollIntoView({block:'center'});}catch(e){}" +
-            "all[i].click();return 'CLICK';}}" +
-            "return 'NOBTN';})();"
-        js(script) { res ->
-            if (res.contains("CLICK")) {
-                status("⑧ 已按「查詢」，等結果…")
-                post(6000) { probeExport(1) }
-            } else if (attempt < 3) {
-                post(1500) { clickQuery(attempt + 1) }
-            } else {
-                finishFlow(false, "帳號與期間已選好，但找不到「查詢」按鈕\n請手動按查詢")
-            }
-        }
-    }
-
-    private fun probeExport(attempt: Int) {
-        val script = "(function(){" +
-            "var kw=['匯出','下載','CSV','csv','Excel','EXCEL','存檔'];" +
-            "var all=document.querySelectorAll('button,a,[role=button],input[type=button]');var hit=null;var names=[];" +
-            "for(var i=0;i<all.length;i++){var t=(all[i].innerText||all[i].value||'').trim();" +
-            "if(!t||t.length>16){continue;}" +
-            "for(var k=0;k<kw.length;k++){if(t.indexOf(kw[k])>=0){names.push(t);if(!hit){hit=all[i];}break;}}}" +
-            "if(hit){try{hit.scrollIntoView({block:'center'});}catch(e){}hit.click();return 'CLICK:'+names.join(',');}" +
-            "var rows=document.querySelectorAll('tr').length;" +
-            "var bt=[];var all2=document.querySelectorAll('button,a,[role=button],input[type=button]');" +
-            "for(var j=0;j<all2.length&&bt.length<15;j++){var t2=(all2[j].innerText||all2[j].value||'').trim();if(t2&&t2.length<=12){bt.push(t2);}}" +
-            "return 'NONE:'+rows+'|BTNS:'+bt.join(',');})();"
-        js(script) { res ->
-            Log.i(TAG, "export" + attempt + " " + res)
-            if (res.contains("CLICK:")) {
-                finishFlow(true, "已按「" + res.substringAfter("CLICK:") + "」\n檔案會下載到 Download 資料夾")
-            } else if (attempt < 4) {
-                post(2600) { probeExport(attempt + 1) }
-            } else {
-                finishFlow(false, "查詢完成但沒看到匯出按鈕\n頁面按鈕：" + res.substringAfter("NONE:").take(120))
-            }
-        }
-    }
-
-    /** 側錄銀行頁面發出的 XHR／fetch（只記錄，不修改內容） */
-    private fun installNetSpy() {
-        val spy = "(function(){" +
-            "if(window.__DSH_SPY){return 'ALREADY';}window.__DSH_SPY=1;window.__DSH=[];" +
-            "var of=window.fetch;" +
-            "if(of){window.fetch=function(input,init){" +
-            "var u=(typeof input==='string')?input:(input&&input.url?input.url:'');" +
-            "var r={url:String(u),body:(init&&init.body)?String(init.body).slice(0,500):'',text:'',status:0};" +
-            "window.__DSH.push(r);" +
-            "return of.apply(this,arguments).then(function(resp){r.status=resp.status;" +
-            "try{resp.clone().text().then(function(t){r.text=String(t).slice(0,3000);}).catch(function(){});}catch(e){}" +
-            "return resp;});};}" +
-            "var op=XMLHttpRequest.prototype.open;var sd=XMLHttpRequest.prototype.send;" +
-            "XMLHttpRequest.prototype.open=function(m,u){this.__dsh={url:String(u),body:'',text:'',status:0};window.__DSH.push(this.__dsh);return op.apply(this,arguments);};" +
-            "XMLHttpRequest.prototype.send=function(b){var self=this;" +
-            "try{if(self.__dsh){self.__dsh.body=b?String(b).slice(0,500):'';" +
-            "self.addEventListener('load',function(){try{self.__dsh.status=self.status;self.__dsh.text=String(self.responseText||'').slice(0,3000);}catch(e){}});}}" +
-            "catch(e){}" +
-            "return sd.apply(self,arguments);};" +
-            "return 'SPYON';})();"
-        web.evaluateJavascript(spy, null)
-    }
-
-    /** 把側錄到的請求寫進 log（分段，避免超過 logcat 單行長度） */
-    private fun dumpNetSpy() {
-        web.evaluateJavascript("(function(){try{return 'N='+((window.__DSH||[]).length)+'::'+JSON.stringify((window.__DSH||[]).slice(-10));}catch(e){return 'ERR';}})();") { raw ->
-            val res = raw ?: "EMPTY"
-            Log.i(TAG, "SPYLEN=" + res.length)
-            var i = 0
-            var chunk = 0
-            while (i < res.length) {
-                val end = minOf(i + 2600, res.length)
-                Log.i(TAG, "SPY#${chunk}#" + res.substring(i, end))
-                i = end
-                chunk++
-            }
-            status("已記錄 " + res.length + " 字元，請告訴我已完成")
-            Toast.makeText(this, "已記錄，可以告訴我了", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    /** 流程結束回饋：綠色成功／紅色失敗，同時 Toast 與 log */
-    private fun finishFlow(ok: Boolean, message: String) {
-        flowRunning = false
-        progressView.visibility = View.GONE
-        resultView.apply {
-            text = (if (ok) "\u2705 完成\n" else "\u26a0\ufe0f 失敗\n") + message
-            setTextColor(if (ok) 0xFF1B5E20.toInt() else 0xFFB71C1C.toInt())
-            setBackgroundColor(if (ok) 0xFFE8F5E9.toInt() else 0xFFFFEBEE.toInt())
-            visibility = View.VISIBLE
-        }
-        status("（流程結束）" + if (ok) "成功" else "失敗")
-        Toast.makeText(this, if (ok) "自動查詢完成" else "自動查詢失敗，請看畫面說明", Toast.LENGTH_LONG).show()
-        Log.i(TAG, "RESULT ok=" + ok + " " + message.replace("\n", " / "))
     }
 
     /** 帶入身分證字號與用戶代號（不含密碼） */
