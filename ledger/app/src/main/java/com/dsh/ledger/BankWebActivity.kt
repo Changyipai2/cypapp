@@ -386,33 +386,31 @@ class BankWebActivity : ComponentActivity() {
         }
     }
 
-    /** 從展開的清單裡選一個帳號（優先符合末四碼，否則選第一個數字選項） */
+    /** 從展開的清單裡選一個帳號（選項長得像 013506089195 長榮航空） */
     private fun pickAccountOption() {
         val tail = accountTail
         val script = "(function(){" +
             "var tail=" + JSONObject.quote(tail) + ";" +
-            "var all=document.querySelectorAll('li,div,span,a,p,dd,td');" +
-            "var first=null;var matchTail=null;var seen=[];" +
-            "for(var i=0;i<all.length;i++){" +
-            "var e=all[i];if(e.offsetParent===null){continue;}" +
-            "if(e.children.length>2){continue;}" +
+            "var els=document.querySelectorAll('*');" +
+            "var first=null,tailHit=null;" +
+            "for(var i=0;i<els.length;i++){var e=els[i];" +
+            "if(e.offsetParent===null){continue;}" +
+            "if(e.children.length>4){continue;}" +
             "var t=(e.innerText||'').trim();" +
-            "if(!t||t.length>24){continue;}" +
-            "if(!/[0-9]{6,}/.test(t)){continue;}" +
-            "seen.push(t);" +
+            "if(!t||t.length>32){continue;}" +
+            "if(!/^[0-9]{8,}/.test(t)){continue;}" +
             "if(!first){first=e;}" +
-            "if(tail&&t.indexOf(tail)>=0){matchTail=e;break;}}" +
-            "var pick=matchTail||first;" +
-            "if(!pick){return 'NOPICK:'+seen.join('/');}" +
-            "try{pick.scrollIntoView({block:'center'});}catch(e2){e2=null;}" +
-            "pick.click();" +
-            "return 'PICK:'+(pick.innerText||'').trim();})();"
+            "if(tail&&t.indexOf(tail)>=0){tailHit=e;break;}}" +
+            "var pick=tailHit||first;" +
+            "if(!pick){return 'NOPICK';}" +
+            "try{pick.click();}catch(e2){pick=null;}" +
+            "return 'PICK:'+((pick&&pick.innerText)||'').trim().slice(0,30);})();"
         js(script) { res ->
             if (res.contains("PICK:")) {
-                status("⑤ 已選帳號 " + res.substringAfter("PICK:").take(20))
-                post(900) { openPeriodDropdown() }
+                status("⑤ 已選帳號 " + res.substringAfter("PICK:"))
+                post(1300) { openPeriodDropdown() }
             } else {
-                finishFlow(false, "帳號下拉裡找不到可選的帳號\n需要你手動選一次（技術：$res）")
+                finishFlow(false, "帳號下拉裡找不到帳號選項\n請手動選一次帳號")
             }
         }
     }
@@ -439,29 +437,23 @@ class BankWebActivity : ComponentActivity() {
         }
     }
 
-    /** 選期間：優先用「近三個月／3 個月」，否則第一個非「請選擇」的選項 */
+    /** 選期間：近 90 天 → 近 1 年 → 近 30 天 */
     private fun pickPeriodOption() {
         val script = "(function(){" +
-            "var all=document.querySelectorAll('li,div,span,a,p,dd,td');" +
-            "var want=null;var any=null;var seen=[];" +
-            "for(var i=0;i<all.length;i++){" +
-            "var e=all[i];if(e.offsetParent===null){continue;}" +
-            "if(e.children.length>2){continue;}" +
+            "var want=['近 90 天','近90天','近 1 年','近1年','近 30 天','近30天'];" +
+            "var els=document.querySelectorAll('*');" +
+            "for(var w=0;w<want.length;w++){" +
+            "for(var i=0;i<els.length;i++){var e=els[i];" +
+            "if(e.offsetParent===null){continue;}" +
+            "if(e.children.length>3){continue;}" +
             "var t=(e.innerText||'').trim();" +
-            "if(!t||t.length>20||t==='請選擇'){continue;}" +
-            "if(!(t.indexOf('月')>=0||t.indexOf('自訂')>=0||t.indexOf('期間')>=0)){continue;}" +
-            "seen.push(t);" +
-            "if(!any){any=e;}" +
-            "if(t.indexOf('3')>=0||t.indexOf('三')>=0||t.indexOf('90')>=0){want=e;break;}}" +
-            "var pick=want||any;" +
-            "if(!pick){return 'NOPICK:'+seen.join('/');}" +
-            "try{pick.scrollIntoView({block:'center'});}catch(e2){e2=null;}" +
-            "pick.click();" +
-            "return 'PICK:'+(pick.innerText||'').trim();})();"
+            "if(t===want[w]){try{e.click();}catch(e2){e2=null;}" +
+            "return 'PICK:'+t;}}}" +
+            "return 'NOPICK';})();"
         js(script) { res ->
             if (res.contains("PICK:")) {
-                status("⑦ 已選期間 " + res.substringAfter("PICK:").take(20))
-                post(900) { clickQuery() }
+                status("⑦ 已選期間 " + res.substringAfter("PICK:"))
+                post(1200) { clickQuery() }
             } else {
                 status("⑦ 期間選不到，直接按查詢")
                 clickQuery()
@@ -480,7 +472,7 @@ class BankWebActivity : ComponentActivity() {
         js(script) { res ->
             if (res.contains("CLICK")) {
                 status("⑧ 已按「查詢」，等結果…")
-                post(4500) { probeExport(1) }
+                post(6000) { probeExport(1) }
             } else if (attempt < 3) {
                 post(1500) { clickQuery(attempt + 1) }
             } else {
@@ -498,7 +490,9 @@ class BankWebActivity : ComponentActivity() {
             "for(var k=0;k<kw.length;k++){if(t.indexOf(kw[k])>=0){names.push(t);if(!hit){hit=all[i];}break;}}}" +
             "if(hit){try{hit.scrollIntoView({block:'center'});}catch(e){}hit.click();return 'CLICK:'+names.join(',');}" +
             "var rows=document.querySelectorAll('tr').length;" +
-            "return 'NONE:'+rows;})();"
+            "var bt=[];var all2=document.querySelectorAll('button,a,[role=button],input[type=button]');" +
+            "for(var j=0;j<all2.length&&bt.length<15;j++){var t2=(all2[j].innerText||all2[j].value||'').trim();if(t2&&t2.length<=12){bt.push(t2);}}" +
+            "return 'NONE:'+rows+'|BTNS:'+bt.join(',');})();"
         js(script) { res ->
             Log.i(TAG, "export" + attempt + " " + res)
             if (res.contains("CLICK:")) {
@@ -506,7 +500,7 @@ class BankWebActivity : ComponentActivity() {
             } else if (attempt < 4) {
                 post(2600) { probeExport(attempt + 1) }
             } else {
-                finishFlow(false, "查詢完成（表格 ${res.substringAfter("NONE:")} 列），但沒看到匯出按鈕\n請截圖給我，看那頁實際有哪些按鈕")
+                finishFlow(false, "查詢完成但沒看到匯出按鈕\n頁面按鈕：" + res.substringAfter("NONE:").take(120))
             }
         }
     }
