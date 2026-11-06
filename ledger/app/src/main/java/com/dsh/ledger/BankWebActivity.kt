@@ -42,6 +42,7 @@ class BankWebActivity : ComponentActivity() {
         private const val EXTRA_UCODE = "userCode"
         private const val EXTRA_TAIL = "tail"
         private const val TAG = "BankFlow"
+        private const val DETAIL_URL = "https://www.cathaybk.com.tw/OnlineBanking/AcctInq/B0103_TxnDtlInq"
 
         fun intent(
             ctx: Context,
@@ -76,6 +77,16 @@ class BankWebActivity : ComponentActivity() {
     private lateinit var progressView: android.widget.ProgressBar
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    /** 已記住的銀行帳號（16 碼），存在本機 SharedPreferences */
+    private fun storedAccts(): List<String> =
+        getSharedPreferences("bank_accts", Context.MODE_PRIVATE)
+            .getString("nums", "")?.split(",")?.map { it.trim() }?.filter { it.length >= 8 } ?: emptyList()
+
+    private fun saveAccts(list: List<String>) {
+        getSharedPreferences("bank_accts", Context.MODE_PRIVATE)
+            .edit().putString("nums", list.joinToString(",")).apply()
+    }
 
     private fun status(text: String) {
         statusView.text = text
@@ -337,14 +348,32 @@ class BankWebActivity : ComponentActivity() {
             if (r.contains("LOGIN")) {
                 finishFlow(false, "還沒登入\n請先輸入帳密並按「登入」，登入成功後再按一次")
             } else {
-                status("② 找銀行帳號…")
-                scanAccountNumbers { nums ->
-                    if (nums.isNotEmpty()) {
-                        status("② 找到 " + nums.size + " 個帳號，直接向銀行取明細…")
-                        directFetch(nums)
-                    } else {
-                        status("② 畫面上沒有帳號，先打開帳號下拉…")
-                        openAccountDropdown()
+                val stored = storedAccts()
+                if (stored.isNotEmpty()) {
+                    status("② 用已記住的帳號 " + stored.size + " 個，直接向銀行取明細…")
+                    directFetch(stored)
+                } else {
+                    status("② 找銀行帳號…")
+                    scanAccountNumbers { nums ->
+                        if (nums.isNotEmpty()) {
+                            saveAccts(nums)
+                            status("② 找到 " + nums.size + " 個帳號，直接向銀行取明細…")
+                            directFetch(nums)
+                        } else {
+                            status("② 先跳到「臺幣帳戶明細」頁…")
+                            load(DETAIL_URL)
+                            post(3800) {
+                                scanAccountNumbers { nums2 ->
+                                    if (nums2.isNotEmpty()) {
+                                        saveAccts(nums2)
+                                        directFetch(nums2)
+                                    } else {
+                                        status("② 頁面上沒有帳號，開帳號下拉讀取…")
+                                        openAccountDropdown()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -395,6 +424,7 @@ class BankWebActivity : ComponentActivity() {
                     js(read) { r2 ->
                         val nums = r2.split(",").map { it.trim() }.filter { it.length >= 8 }
                         if (nums.isNotEmpty()) {
+                            saveAccts(nums)
                             status("③ 讀到 " + nums.size + " 個帳號，直接取明細…")
                             directFetch(nums)
                         } else {
