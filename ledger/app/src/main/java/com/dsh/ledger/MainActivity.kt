@@ -79,6 +79,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Store.init(this)
         Vault.init(this)
+        DailyReminder.schedule(this)
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 77)
+            }
+        }
         setContent {
             MaterialTheme(
                 colorScheme = lightColorScheme(
