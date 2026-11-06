@@ -330,6 +330,15 @@ class BankWebActivity : ComponentActivity() {
         bottom.addView(resultView)
         bottom.addView(statusView)
         bottom.addView(runBtn)
+        val histBtn = Button(this).apply {
+            text = "▶ 補抓歷史（分批）"
+            textSize = 13f
+            setTextColor(AColor.WHITE)
+            setBackgroundColor(0xFF00796B.toInt())
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40))
+            setOnClickListener { if (!flowRunning) runHistoryFlow() }
+        }
+        bottom.addView(histBtn)
         bottom.addView(spyBtn)
         root.addView(bottom)
 
@@ -513,6 +522,63 @@ class BankWebActivity : ComponentActivity() {
         jsParts.add("return 'STARTED';})();")
         web.evaluateJavascript(jsParts.joinToString(""), null)
         status("④ 取得 JWT 並呼叫 API…")
+    }
+
+    /** 分批補抓歷史（從帳本最早一筆或 2020-01-01 到今天，每段 89 天） */
+    private fun runHistoryFlow() {
+        flowRunning = true
+        resultView.visibility = View.GONE
+        progressView.visibility = View.VISIBLE
+        status("① 準備補抓歷史…")
+        val earliest = Store.txs.minOfOrNull { it.dateMillis }?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
+            ?: java.time.LocalDate.of(2020, 1, 1)
+        val from = earliest.withDayOfMonth(1)
+        val today = java.time.LocalDate.now()
+        val chunks = mutableListOf<Pair<String, String>>()
+        var cur = from
+        while (cur.isBefore(today) || cur.isEqual(today)) {
+            val end = cur.plusDays(88).let { if (it.isAfter(today)) today else it }
+            chunks.add(cur.toString() to end.toString())
+            cur = end.plusDays(1)
+        }
+        status("① 共 " + chunks.size + " 段（" + from + " ~ " + today + "）")
+        val nums = storedAccts()
+        if (nums.isEmpty()) {
+            finishFlow(false, "沒有記住銀行帳號\n請先按「自動查詢明細」成功一次")
+            return
+        }
+        directFetchChunks(nums.map { it.padStart(16, '0') }.distinct(), chunks)
+    }
+
+    /** 依指定區間陣列，分批呼叫 API 後一次匯入 */
+    private fun directFetchChunks(acctsIn: List<String>, chunks: List<Pair<String, String>>) {
+        val cust = idNo.ifBlank { "" }
+        if (cust.isBlank()) { finishFlow(false, "缺少身分證字號，無法呼叫 API"); return }
+        val jl = mutableListOf<String>()
+        jl.add("(function(){")
+        jl.add("var cust=" + JSONObject.quote(cust) + ";")
+        jl.add("var acc=" + JSONObject.quote(acctsIn.firstOrNull() ?: "") + ";")
+        jl.add("var chunks=" + org.json.JSONArray(chunks.map { listOf(it.first, it.second) }).toString() + ";")
+        jl.add("function p2(n){return (n<10?'0':'')+n;}")
+        jl.add("function seq(){var d=new Date();var ts=''+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+p2(d.getHours())+p2(d.getMinutes())+p2(d.getSeconds());var h='';for(var i=0;i<32;i++){h+='0123456789abcdef'.charAt(Math.floor(Math.random()*16));}return ts+h.substring(0,8)+'-'+h.substring(8,12)+'-'+h.substring(12,16)+'-'+h.substring(16,20)+'-'+h.substring(20,32);}")
+        jl.add("function pickJwt(){try{var st=window.sessionStorage;for(var i=0;i<st.length;i++){var v=st.getItem(st.key(i));if(v&&v.length>60&&v.indexOf('eyJ')===0&&v.split('.').length===3){return v;}}}catch(e){}return '';}")
+        jl.add("function run(jwt){var results=[];var idx=0;")
+        jl.add("function next(){if(idx>=chunks.length){LedgerBridge.onData(JSON.stringify({accounts:results}));return;}var c=chunks[idx++];")
+        jl.add("fetch('/OnlineBankingApi/ClientBank/Api/ClientBank/B_ACCT_Q_TransferDetail',{method:'POST',credentials:'include',")
+        jl.add("headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*','Authorization':'Bearer '+jwt},")
+        jl.add("body:JSON.stringify({functionSeqNo:seq(),content:{customerId:cust,queryFilters:[{accountNumber:acc,startDate:c[0],endDate:c[1]}]}})")
+        jl.add("}).then(function(r){var st=r.status;return r.text().then(function(t){var j=null;try{j=JSON.parse(t);}catch(e){j={_raw:t.substring(0,120)};}return {st:st,j:j};});})")
+        jl.add(".then(function(o){results.push({acct:acc,status:o.st,resp:o.j});next();})")
+        jl.add(".catch(function(e){results.push({acct:acc,error:String(e)});next();});}")
+        jl.add("next();}")
+        jl.add("var cached=pickJwt();if(cached){run(cached);return 'CACHED';}")
+        jl.add("fetch('/MyBank/Customized/GetJWT',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*'},body:'{}'})")
+        jl.add(".then(function(r){return r.text();}).then(function(txt){var jwt='';try{var o=JSON.parse(txt);jwt=(o&&o.Data&&o.Data.JwtToken)?o.Data.JwtToken:'';}catch(e){}")
+        jl.add("if(!jwt){LedgerBridge.onData(JSON.stringify({accounts:[],error:'NOJWT:'+txt.substring(0,120)}));return;}run(jwt);})")
+        jl.add(".catch(function(e){LedgerBridge.onData(JSON.stringify({accounts:[],error:'JWTFAIL:'+String(e)}));});")
+        jl.add("return 'STARTED';})();")
+        web.evaluateJavascript(jl.joinToString(""), null)
+        status("② 分批抓取中…")
     }
 
     /** API 回應 → 匯入帳本（自動略過重複） */
