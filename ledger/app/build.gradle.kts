@@ -39,8 +39,8 @@ android {
         applicationId = "com.dsh.ledger"
         minSdk = 26
         targetSdk = 34
-        versionCode = 32
-        versionName = "4.2"
+        versionCode = 33
+        versionName = "4.3"
     }
 
     buildTypes {
