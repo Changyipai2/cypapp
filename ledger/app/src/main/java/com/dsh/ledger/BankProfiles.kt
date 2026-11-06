@@ -24,7 +24,11 @@ object BankProfiles {
             detailPath = "/OnlineBankingApi/ClientBank/Api/ClientBank/B_ACCT_Q_TransferDetail",
             note = "已建檔"
         ),
-        BankProfile("台北富邦", "https://www.fubon.com/banking/"),
+        BankProfile(
+            name = "台北富邦",
+            loginUrl = "https://ebank.taipeifubon.com.tw/B2C/common/Index.faces",
+            note = "登入需圖形驗證碼（由使用者輸入）"
+        ),
         BankProfile("玉山銀行", "https://www.esunbank.com/zh-TW/personal"),
         BankProfile("台新 Richart", "https://richart.tw/"),
         BankProfile("中國信託", "https://www.ctbcbank.com/"),
