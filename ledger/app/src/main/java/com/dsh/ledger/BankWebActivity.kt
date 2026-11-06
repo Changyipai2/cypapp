@@ -502,9 +502,9 @@ class BankWebActivity : ComponentActivity() {
             "function done(){if(pending<=0){LedgerBridge.onData(JSON.stringify({accounts:results}));}}" +
             "for(var i=0;i<accts.length;i++){(function(acc){" +
             "fetch('/OnlineBankingApi/ClientBank/Api/ClientBank/B_ACCT_Q_TransferDetail',{method:'POST',credentials:'include'," +
-            "headers:{'Content-Type':'application/json'}," +
+            "headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*'}," +
             "body:JSON.stringify({functionSeqNo:seq(),content:{customerId:cust,queryFilters:[{accountNumber:acc,startDate:start,endDate:end}]}})" +
-            "}).then(function(r){return r.json();}).then(function(j){" +
+            "}).then(function(r){return r.text().then(function(txt){try{return JSON.parse(txt);}catch(e2){return {_raw:txt.substring(0,600)};}});}).then(function(j){" +
             "results.push({acct:acc,resp:j});" +
             "pending--;done();}).catch(function(e){results.push({acct:acc,error:String(e)});pending--;done();});})(accts[i]);}" +
             "return 'STARTED';})();"
@@ -513,6 +513,14 @@ class BankWebActivity : ComponentActivity() {
 
     /** API 回應 → 匯入帳本（自動略過重複） */
     private fun handleBankData(payload: String) {
+        var pos0 = 0
+        var n0 = 0
+        while (pos0 < payload.length && n0 < 6) {
+            val end0 = minOf(pos0 + 2000, payload.length)
+            Log.i(TAG, "PAYLOAD#" + n0 + "#" + payload.substring(pos0, end0))
+            pos0 = end0
+            n0++
+        }
         runCatching {
             Store.init(applicationContext)
             val root = org.json.JSONObject(payload)
@@ -565,7 +573,7 @@ class BankWebActivity : ComponentActivity() {
                 }
             }
             if (rows.isEmpty()) {
-                finishFlow(false, "API 有回應，但沒有交易資料\n（可能查無帳戶或期間內無資料）")
+                finishFlow(false, "API 有回應但沒有交易資料\n技術：" + payload.take(150))
                 return
             }
             var target = Store.accounts.firstOrNull { it.name == "國泰世華" }
