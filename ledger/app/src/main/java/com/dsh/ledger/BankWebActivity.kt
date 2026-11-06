@@ -511,7 +511,7 @@ class BankWebActivity : ComponentActivity() {
         jsParts.add("if(!jwt){LedgerBridge.onData(JSON.stringify({accounts:[],error:'NOJWT:'+txt.substring(0,160)}));return;}run(jwt);})")
         jsParts.add(".catch(function(e){LedgerBridge.onData(JSON.stringify({accounts:[],error:'JWTFAIL:'+String(e)}));});")
         jsParts.add("return 'STARTED';})();")
-        web.evaluateJavascript(jsParts.join(""), null)
+        web.evaluateJavascript(jsParts.joinToString(""), null)
         status("④ 取得 JWT 並呼叫 API…")
     }
 
