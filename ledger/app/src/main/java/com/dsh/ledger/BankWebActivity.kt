@@ -203,6 +203,10 @@ class BankWebActivity : ComponentActivity() {
                     }
                 }
 
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                    installNetSpy()
+                }
+
                 override fun onReceivedError(
                     view: WebView?,
                     request: android.webkit.WebResourceRequest?,
@@ -292,10 +296,19 @@ class BankWebActivity : ComponentActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46))
             setOnClickListener { if (!flowRunning) runAutoFlow() }
         }
+        val spyBtn = Button(this).apply {
+            text = "▶ 記錄銀行內部請求（診斷用）"
+            textSize = 13f
+            setBackgroundColor(0xFF37474F.toInt())
+            setTextColor(AColor.WHITE)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40))
+            setOnClickListener { dumpNetSpy() }
+        }
         bottom.addView(progressView)
         bottom.addView(resultView)
         bottom.addView(statusView)
         bottom.addView(runBtn)
+        bottom.addView(spyBtn)
         root.addView(bottom)
 
         setContentView(root)
@@ -502,6 +515,47 @@ class BankWebActivity : ComponentActivity() {
             } else {
                 finishFlow(false, "查詢完成但沒看到匯出按鈕\n頁面按鈕：" + res.substringAfter("NONE:").take(120))
             }
+        }
+    }
+
+    /** 側錄銀行頁面發出的 XHR／fetch（只記錄，不修改內容） */
+    private fun installNetSpy() {
+        val spy = "(function(){" +
+            "if(window.__DSH_SPY){return 'ALREADY';}window.__DSH_SPY=1;window.__DSH=[];" +
+            "var of=window.fetch;" +
+            "if(of){window.fetch=function(input,init){" +
+            "var u=(typeof input==='string')?input:(input&&input.url?input.url:'');" +
+            "var r={url:String(u),body:(init&&init.body)?String(init.body).slice(0,500):'',text:'',status:0};" +
+            "window.__DSH.push(r);" +
+            "return of.apply(this,arguments).then(function(resp){r.status=resp.status;" +
+            "try{resp.clone().text().then(function(t){r.text=String(t).slice(0,3000);}).catch(function(){});}catch(e){}" +
+            "return resp;});};}" +
+            "var op=XMLHttpRequest.prototype.open;var sd=XMLHttpRequest.prototype.send;" +
+            "XMLHttpRequest.prototype.open=function(m,u){this.__dsh={url:String(u),body:'',text:'',status:0};window.__DSH.push(this.__dsh);return op.apply(this,arguments);};" +
+            "XMLHttpRequest.prototype.send=function(b){var self=this;" +
+            "try{if(self.__dsh){self.__dsh.body=b?String(b).slice(0,500):'';" +
+            "self.addEventListener('load',function(){try{self.__dsh.status=self.status;self.__dsh.text=String(self.responseText||'').slice(0,3000);}catch(e){}});}}" +
+            "catch(e){}" +
+            "return sd.apply(self,arguments);};" +
+            "return 'SPYON';})();"
+        web.evaluateJavascript(spy, null)
+    }
+
+    /** 把側錄到的請求寫進 log（分段，避免超過 logcat 單行長度） */
+    private fun dumpNetSpy() {
+        web.evaluateJavascript("(function(){try{return 'N='+((window.__DSH||[]).length)+'::'+JSON.stringify((window.__DSH||[]).slice(-10));}catch(e){return 'ERR';}})();") { raw ->
+            val res = raw ?: "EMPTY"
+            Log.i(TAG, "SPYLEN=" + res.length)
+            var i = 0
+            var chunk = 0
+            while (i < res.length) {
+                val end = minOf(i + 2600, res.length)
+                Log.i(TAG, "SPY#${chunk}#" + res.substring(i, end))
+                i = end
+                chunk++
+            }
+            status("已記錄 " + res.length + " 字元，請告訴我已完成")
+            Toast.makeText(this, "已記錄，可以告訴我了", Toast.LENGTH_SHORT).show()
         }
     }
 
