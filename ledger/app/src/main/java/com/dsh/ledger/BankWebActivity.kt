@@ -505,7 +505,7 @@ class BankWebActivity : ComponentActivity() {
             "headers:{'Content-Type':'application/json'}," +
             "body:JSON.stringify({functionSeqNo:seq(),content:{customerId:cust,queryFilters:[{accountNumber:acc,startDate:start,endDate:end}]}})" +
             "}).then(function(r){return r.json();}).then(function(j){" +
-            "results.push({acct:acc,datas:(j&&j.content&&j.content.datas)?j.content.datas:[]});" +
+            "results.push({acct:acc,resp:j});" +
             "pending--;done();}).catch(function(e){results.push({acct:acc,error:String(e)});pending--;done();});})(accts[i]);}" +
             "return 'STARTED';})();"
         js(script) { status("④ 已送出 API 請求，等回應…") }
@@ -521,7 +521,20 @@ class BankWebActivity : ComponentActivity() {
             var total = 0
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                val datas = o.optJSONArray("datas") ?: continue
+                val resp = o.optJSONObject("resp")
+                if (resp != null) {
+                    val text = resp.toString()
+                    var pos = 0
+                    var nth = 0
+                    while (pos < text.length && nth < 4) {
+                        val end = minOf(pos + 2200, text.length)
+                        Log.i(TAG, "APIRESP#" + nth + "#" + text.substring(pos, end))
+                        pos = end
+                        nth++
+                    }
+                }
+                val datas = resp?.optJSONObject("content")?.optJSONArray("datas")
+                    ?: o.optJSONArray("datas") ?: continue
                 for (j in 0 until datas.length()) {
                     val d = datas.getJSONObject(j)
                     val details = d.optJSONArray("details") ?: continue
