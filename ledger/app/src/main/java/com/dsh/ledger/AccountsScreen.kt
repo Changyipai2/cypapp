@@ -76,7 +76,8 @@ fun AccountsScreen() {
                 context.startActivity(
                     BankWebActivity.intent(
                         context, webAccount.bankName, webAccount.loginUrl,
-                        webAccount.queryUrl, webAccount.idNo, webAccount.userCode, webAccount.accountTail
+                        webAccount.queryUrl, webAccount.idNo, webAccount.userCode, webAccount.accountTail,
+                        webAccount.bankAcctNo
                     )
                 )
             }.onFailure {
@@ -214,6 +215,7 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
     var tail by remember { mutableStateOf("") }
     var idNo by remember { mutableStateOf("") }
     var userCode by remember { mutableStateOf("") }
+    var bankAcctNo by remember { mutableStateOf("") }
     var currency by remember { mutableStateOf("TWD") }
     var note by remember { mutableStateOf("") }
 
@@ -282,6 +284,12 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
+                    value = bankAcctNo, onValueChange = { bankAcctNo = it.filter { ch -> ch.isDigit() }.take(16) },
+                    label = { Text("銀行帳號（例 034506307785，用來直接取明細）") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
                     value = note, onValueChange = { note = it },
                     label = { Text("備註") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -297,7 +305,7 @@ fun AddAccountDialog(onDismiss: () -> Unit, onSave: (BankAccount) -> Unit) {
                                 id = 0, bankName = bankName.trim(), accountTail = tail.trim(),
                                 currency = currency.ifBlank { "TWD" }, loginUrl = url.trim(),
                                 note = note.trim(), queryUrl = queryUrl.trim(),
-                                idNo = idNo.trim(), userCode = userCode.trim()
+                                idNo = idNo.trim(), userCode = userCode.trim(), bankAcctNo = bankAcctNo.trim()
                             )
                         )
                     }
