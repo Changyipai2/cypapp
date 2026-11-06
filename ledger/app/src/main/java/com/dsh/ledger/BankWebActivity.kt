@@ -40,6 +40,7 @@ class BankWebActivity : ComponentActivity() {
         private const val EXTRA_QUERY = "query"
         private const val EXTRA_IDNO = "idNo"
         private const val EXTRA_UCODE = "userCode"
+        private const val EXTRA_TAIL = "tail"
         private const val TAG = "BankFlow"
 
         fun intent(
@@ -48,7 +49,8 @@ class BankWebActivity : ComponentActivity() {
             url: String,
             queryUrl: String,
             idNo: String = "",
-            userCode: String = ""
+            userCode: String = "",
+            tail: String = ""
         ): Intent =
             Intent(ctx, BankWebActivity::class.java)
                 .putExtra(EXTRA_TITLE, title)
@@ -56,6 +58,7 @@ class BankWebActivity : ComponentActivity() {
                 .putExtra(EXTRA_QUERY, queryUrl)
                 .putExtra(EXTRA_IDNO, idNo)
                 .putExtra(EXTRA_UCODE, userCode)
+                .putExtra(EXTRA_TAIL, tail)
     }
 
     private lateinit var web: WebView
@@ -66,6 +69,7 @@ class BankWebActivity : ComponentActivity() {
     private var idNo: String = ""
     private var userCode: String = ""
     private var queryUrl: String = ""
+    private var accountTail: String = ""
     private var autoFilled = false
     private var flowRunning = false
     private lateinit var resultView: TextView
@@ -95,6 +99,7 @@ class BankWebActivity : ComponentActivity() {
         queryUrl = intent.getStringExtra(EXTRA_QUERY).orEmpty()
         idNo = intent.getStringExtra(EXTRA_IDNO).orEmpty()
         userCode = intent.getStringExtra(EXTRA_UCODE).orEmpty()
+        accountTail = intent.getStringExtra(EXTRA_TAIL).orEmpty()
         currentUrl = startUrl
 
         val root = LinearLayout(this).apply {
@@ -210,7 +215,34 @@ class BankWebActivity : ComponentActivity() {
             }
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            addJavascriptInterface(object {
+                @android.webkit.JavascriptInterface
+                fun saveBase64(name: String, b64: String) {
+                    try {
+                        val dir = java.io.File(filesDir, "bank_downloads").apply { mkdirs() }
+                        val f = java.io.File(dir, name.ifBlank { "bank_export.csv" })
+                        f.writeBytes(android.util.Base64.decode(b64, android.util.Base64.DEFAULT))
+                        runOnUiThread {
+                            Toast.makeText(this@BankWebActivity, "已存到 " + f.absolutePath, Toast.LENGTH_LONG).show()
+                            status("檔案已存：" + f.name)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "saveBase64 fail", e)
+                    }
+                }
+            }, "LedgerBridge")
             setDownloadListener(DownloadListener { url, userAgent, _, mimeType, _ ->
+                if (url.startsWith("blob:")) {
+                    val jsCode = "(function(){fetch(" + JSONObject.quote(url) + ")" +
+                        ".then(function(r){return r.blob();})" +
+                        ".then(function(b){var fr=new FileReader();fr.onload=function(){" +
+                        "var s=fr.result;var i=s.indexOf(',');" +
+                        "LedgerBridge.saveBase64('bank_export.csv', s.substring(i+1));};" +
+                        "fr.readAsDataURL(b);})" +
+                        ".catch(function(e){});return 1;})();"
+                    js(jsCode) { status("⑥ blob 下載，轉存中…") }
+                    return@DownloadListener
+                }
                 runCatching {
                     val req = DownloadManager.Request(Uri.parse(url))
                     req.setMimeType(mimeType)
@@ -312,114 +344,159 @@ class BankWebActivity : ComponentActivity() {
         js(script) { res ->
             if (res.contains("CLICK:")) {
                 status("③ 已開「" + res.substringAfter("CLICK:") + "」，等頁面…")
-                post(2600) { openFirstDropdown() }
-            } else if (attempt < 4) {
-                post(1500) { findStatement(attempt + 1) }
+                post(2600) { openAccountDropdown() }
+            } else if (attempt < 5) {
+                post(1600) { findStatement(attempt + 1) }
             } else {
                 finishFlow(false, "找不到「交易明細／帳戶查詢」連結\n請先手動點進明細頁，再按一次按鈕")
             }
         }
     }
 
-    /** 點開第一個「請選擇」下拉，並把它的 DOM 結構寫進 log（用來精準做選項點擊） */
-    private fun openFirstDropdown() {
-        val clickJs = "(function(){" +
-            "var els=document.querySelectorAll('div,span,button,input,select,[role=combobox]');" +
+    /** 點開「帳號」下拉（畫面上第一個「請選擇」） */
+    private fun openAccountDropdown() {
+        val script = "(function(){" +
+            "var els=document.querySelectorAll('div,span,button,input,[role=combobox]');" +
             "for(var i=0;i<els.length;i++){" +
             "var t=((els[i].innerText||els[i].value||'')+'').trim();" +
-            "if(t==='請選擇'){try{els[i].click();}catch(e){e=null;}" +
-            "var p=els[i].parentElement;var q=p?p.parentElement:null;" +
-            "var html=q?(q.outerHTML||'').slice(0,600):'';" +
-            "return 'TAG='+els[i].tagName+' CLS='+(els[i].className||'')+' PARENTCLS='+(p&&p.className?p.className:'')+' HTML='+html;}}" +
-            "return 'NOPLACEHOLDER';})();"
-        js(clickJs) { info ->
-            Log.i(TAG, "dd0 " + info)
-            post(900) {
-                val dumpJs = "(function(){" +
-                    "var out=[];" +
-                    "var all=document.querySelectorAll('*');var n=0;" +
-                    "for(var i=0;i<all.length;i++){" +
-                    "var c=(all[i].className||'')+'';" +
-                    "if(c.indexOf('select')<0&&c.indexOf('Select')<0&&c.indexOf('drop')<0&&c.indexOf('Drop')<0&&c.indexOf('option')<0&&c.indexOf('Option')<0&&c.indexOf('list')<0&&c.indexOf('List')<0){continue;}" +
-                    "var t=(all[i].innerText||'').trim();" +
-                    "if(t.length>26){continue;}" +
-                    "out.push(all[i].tagName+'.'+c.split(' ')[0]+'='+t);" +
-                    "n++;if(n>=18){break;}}" +
-                    "return 'N='+n+' :: '+out.join(' | ');})();"
-                js(dumpJs) { res ->
-                    Log.i(TAG, "dd1 " + res)
-                    status("④ 下拉結構已記錄")
-                    finishFlow(false, "已點開帳號下拉，但還不會選\n技術：\n" + info.take(120) + "\n" + res.take(200))
-                }
+            "if(t!=='請選擇'){continue;}" +
+            "if(els[i].offsetParent===null){continue;}" +
+            "try{els[i].click();}catch(e){e=null;}" +
+            "return 'OPEN';}" +
+            "return 'NOPH';})();"
+        js(script) { res ->
+            if (res.contains("OPEN")) {
+                status("④ 已點開帳號下拉…")
+                post(1000) { pickAccountOption() }
+            } else {
+                finishFlow(false, "這一頁沒有「請選擇」下拉\n請確認是不是停在「臺幣帳戶明細」頁")
             }
         }
     }
 
-    private fun fillQueryForm(attempt: Int = 1) {
+    /** 從展開的清單裡選一個帳號（優先符合末四碼，否則選第一個數字選項） */
+    private fun pickAccountOption() {
+        val tail = accountTail
         val script = "(function(){" +
-            "var out=[];" +
-            "var sels=document.querySelectorAll('select');" +
-            "out.push('SELECTS='+sels.length);" +
-            "for(var i=0;i<sels.length;i++){var s=sels[i];var opts=[];" +
-            "for(var j=0;j<Math.min(s.options.length,10);j++){opts.push((s.options[j].text||'').trim());}" +
-            "if(s.options.length>1){s.selectedIndex=1;s.dispatchEvent(new Event('change',{bubbles:true}));}" +
-            "out.push('['+i+']'+(s.name||s.id||'?')+'='+(s.value||'')+'/opts:'+opts.join('|'));}" +
-            "var all=document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit]');" +
-            "var names=[];var target=null;" +
-            "for(var k=0;k<all.length;k++){var t=(all[k].innerText||all[k].value||'').trim();" +
-            "if(!t||t.length>14){continue;}names.push(t);" +
-            "if(!target&&(t==='查詢'||t==='確定查詢')){target=all[k];}}" +
-            "out.push('BTNS='+names.join(','));" +
-            "if(target){try{target.scrollIntoView({block:'center'});}catch(e){}target.click();out.push('CLICKED=查詢');}" +
-            "return out.join(' || ');})();"
+            "var tail=" + JSONObject.quote(tail) + ";" +
+            "var all=document.querySelectorAll('li,div,span,a,p,dd,td');" +
+            "var first=null;var matchTail=null;var seen=[];" +
+            "for(var i=0;i<all.length;i++){" +
+            "var e=all[i];if(e.offsetParent===null){continue;}" +
+            "if(e.children.length>2){continue;}" +
+            "var t=(e.innerText||'').trim();" +
+            "if(!t||t.length>24){continue;}" +
+            "if(!/[0-9]{6,}/.test(t)){continue;}" +
+            "seen.push(t);" +
+            "if(!first){first=e;}" +
+            "if(tail&&t.indexOf(tail)>=0){matchTail=e;break;}}" +
+            "var pick=matchTail||first;" +
+            "if(!pick){return 'NOPICK:'+seen.join('/');}" +
+            "try{pick.scrollIntoView({block:'center'});}catch(e2){e2=null;}" +
+            "pick.click();" +
+            "return 'PICK:'+(pick.innerText||'').trim();})();"
         js(script) { res ->
-            Log.i(TAG, "scan" + attempt + " " + res)
-            val clicked = res.contains("CLICKED=查詢")
-            if (clicked) {
-                status("④ 已按「查詢」，等結果…")
+            if (res.contains("PICK:")) {
+                status("⑤ 已選帳號 " + res.substringAfter("PICK:").take(20))
+                post(900) { openPeriodDropdown() }
+            } else {
+                finishFlow(false, "帳號下拉裡找不到可選的帳號\n需要你手動選一次（技術：$res）")
+            }
+        }
+    }
+
+    /** 點開「查詢期間」下拉 */
+    private fun openPeriodDropdown() {
+        val script = "(function(){" +
+            "var els=document.querySelectorAll('div,span,button,input,[role=combobox]');" +
+            "for(var i=0;i<els.length;i++){" +
+            "var t=((els[i].innerText||els[i].value||'')+'').trim();" +
+            "if(t!=='請選擇'){continue;}" +
+            "if(els[i].offsetParent===null){continue;}" +
+            "try{els[i].click();}catch(e){e=null;}" +
+            "return 'OPEN';}" +
+            "return 'NOPH';})();"
+        js(script) { res ->
+            if (res.contains("OPEN")) {
+                status("⑥ 已點開期間下拉…")
+                post(1000) { pickPeriodOption() }
+            } else {
+                status("⑥ 沒有期間下拉，直接按查詢")
+                clickQuery()
+            }
+        }
+    }
+
+    /** 選期間：優先用「近三個月／3 個月」，否則第一個非「請選擇」的選項 */
+    private fun pickPeriodOption() {
+        val script = "(function(){" +
+            "var all=document.querySelectorAll('li,div,span,a,p,dd,td');" +
+            "var want=null;var any=null;var seen=[];" +
+            "for(var i=0;i<all.length;i++){" +
+            "var e=all[i];if(e.offsetParent===null){continue;}" +
+            "if(e.children.length>2){continue;}" +
+            "var t=(e.innerText||'').trim();" +
+            "if(!t||t.length>20||t==='請選擇'){continue;}" +
+            "if(!(t.indexOf('月')>=0||t.indexOf('自訂')>=0||t.indexOf('期間')>=0)){continue;}" +
+            "seen.push(t);" +
+            "if(!any){any=e;}" +
+            "if(t.indexOf('3')>=0||t.indexOf('三')>=0||t.indexOf('90')>=0){want=e;break;}}" +
+            "var pick=want||any;" +
+            "if(!pick){return 'NOPICK:'+seen.join('/');}" +
+            "try{pick.scrollIntoView({block:'center'});}catch(e2){e2=null;}" +
+            "pick.click();" +
+            "return 'PICK:'+(pick.innerText||'').trim();})();"
+        js(script) { res ->
+            if (res.contains("PICK:")) {
+                status("⑦ 已選期間 " + res.substringAfter("PICK:").take(20))
+                post(900) { clickQuery() }
+            } else {
+                status("⑦ 期間選不到，直接按查詢")
+                clickQuery()
+            }
+        }
+    }
+
+    private fun clickQuery(attempt: Int = 1) {
+        val script = "(function(){" +
+            "var all=document.querySelectorAll('button,a,[role=button],input[type=button],input[type=submit]');" +
+            "for(var i=0;i<all.length;i++){" +
+            "var t=(all[i].innerText||all[i].value||'').trim();" +
+            "if(t==='查詢'||t==='確定查詢'){try{all[i].scrollIntoView({block:'center'});}catch(e){}" +
+            "all[i].click();return 'CLICK';}}" +
+            "return 'NOBTN';})();"
+        js(script) { res ->
+            if (res.contains("CLICK")) {
+                status("⑧ 已按「查詢」，等結果…")
                 post(4500) { probeExport(1) }
             } else if (attempt < 3) {
-                status("④ 選單還沒出現，重試…")
-                post(1800) { fillQueryForm(attempt + 1) }
+                post(1500) { clickQuery(attempt + 1) }
             } else {
-                finishFlow(false, "已到明細頁，但找不到「查詢」按鈕\n請手動選帳號與期間後再按一次")
+                finishFlow(false, "帳號與期間已選好，但找不到「查詢」按鈕\n請手動按查詢")
             }
         }
     }
 
     private fun probeExport(attempt: Int) {
         val script = "(function(){" +
-            "var kw=['匯出','下載','CSV','csv','Excel','EXCEL','存檔','列印'];" +
+            "var kw=['匯出','下載','CSV','csv','Excel','EXCEL','存檔'];" +
             "var all=document.querySelectorAll('button,a,[role=button],input[type=button]');var hit=null;var names=[];" +
             "for(var i=0;i<all.length;i++){var t=(all[i].innerText||all[i].value||'').trim();" +
-            "if(!t||t.length>16){continue;}for(var k=0;k<kw.length;k++){if(t.indexOf(kw[k])>=0){names.push(t);if(!hit){hit=all[i];}break;}}}" +
+            "if(!t||t.length>16){continue;}" +
+            "for(var k=0;k<kw.length;k++){if(t.indexOf(kw[k])>=0){names.push(t);if(!hit){hit=all[i];}break;}}}" +
             "if(hit){try{hit.scrollIntoView({block:'center'});}catch(e){}hit.click();return 'CLICK:'+names.join(',');}" +
-            "return 'NONE:'+names.length;})();"
+            "var rows=document.querySelectorAll('tr').length;" +
+            "return 'NONE:'+rows;})();"
         js(script) { res ->
             Log.i(TAG, "export" + attempt + " " + res)
             if (res.contains("CLICK:")) {
-                finishFlow(true, "已按「" + res.substringAfter("CLICK:") + "」\n檔案會下載到 Download，之後按「設定 → 匯入」即可記帳")
+                finishFlow(true, "已按「" + res.substringAfter("CLICK:") + "」\n檔案會下載到 Download 資料夾")
             } else if (attempt < 4) {
-                post(2500) { probeExport(attempt + 1) }
+                post(2600) { probeExport(attempt + 1) }
             } else {
-                finishFlow(false, "查詢完成，但這頁沒有匯出／下載按鈕\n需要手動查看或截圖給我")
+                finishFlow(false, "查詢完成（表格 ${res.substringAfter("NONE:")} 列），但沒看到匯出按鈕\n請截圖給我，看那頁實際有哪些按鈕")
             }
         }
-    }
-
-    /** 流程結束回饋：綠色成功 / 紅色失敗，同時 Toast */
-    private fun finishFlow(ok: Boolean, message: String) {
-        flowRunning = false
-        progressView.visibility = View.GONE
-        resultView.apply {
-            text = (if (ok) "\u2705 完成\n" else "\u26a0\ufe0f 失敗\n") + message
-            setTextColor(if (ok) 0xFF1B5E20.toInt() else 0xFFB71C1C.toInt())
-            setBackgroundColor(if (ok) 0xFFE8F5E9.toInt() else 0xFFFFEBEE.toInt())
-            visibility = View.VISIBLE
-        }
-        status("（流程結束）" + if (ok) "成功" else "失敗")
-        Toast.makeText(this, if (ok) "自動查詢完成" else "自動查詢失敗，請看畫面說明", Toast.LENGTH_LONG).show()
-        Log.i(TAG, "RESULT ok=" + ok + " " + message.replace("\n", " / "))
     }
 
     /** 帶入身分證字號與用戶代號（不含密碼） */
