@@ -321,32 +321,36 @@ class BankWebActivity : ComponentActivity() {
         }
     }
 
-    /** 點開第一個「請選擇」下拉，並把選項結構寫進 log */
+    /** 點開第一個「請選擇」下拉，並把它的 DOM 結構寫進 log（用來精準做選項點擊） */
     private fun openFirstDropdown() {
-        val script = "(function(){" +
-            "var out=[];" +
+        val clickJs = "(function(){" +
             "var els=document.querySelectorAll('div,span,button,input,select,[role=combobox]');" +
-            "var ph=null;" +
             "for(var i=0;i<els.length;i++){" +
             "var t=((els[i].innerText||els[i].value||'')+'').trim();" +
-            "if(t==='請選擇'){ph=els[i];break;}}" +
-            "out.push('FOUND_PLACEHOLDER='+(ph?'YES':'NO'));" +
-            "if(ph){try{ph.click();}catch(e){out.push('CLICKERR');}}" +
-            "var cands=[];" +
-            "var all=document.querySelectorAll('li,[role=option],[class*=option],[class*=Option],[class*=item],[class*=Item],[class*=list],[class*=List]');" +
-            "for(var j=0;j<all.length&&cands.length<40;j++){" +
-            "var t2=(all[j].innerText||'').trim();" +
-            "if(t2&&t2.length<=28&&cands.indexOf(t2)<0){cands.push(t2);}}" +
-            "out.push('CANDS='+cands.join('|'));" +
-            "return out.join(' || ');})();"
-        js(script) { res ->
-            Log.i(TAG, "dropdown " + res)
-            val found = res.contains("FOUND_PLACEHOLDER=YES")
-            if (found) {
-                status("④ 已點開下拉，等選項…")
-                finishFlow(false, "已點開帳號下拉（下一步要做選項選擇）\n技術資訊：" + res.take(80))
-            } else {
-                finishFlow(false, "這一頁沒有「請選擇」下拉\n可能不是明細頁，請確認畫面")
+            "if(t==='請選擇'){try{els[i].click();}catch(e){e=null;}" +
+            "var p=els[i].parentElement;var q=p?p.parentElement:null;" +
+            "var html=q?(q.outerHTML||'').slice(0,600):'';" +
+            "return 'TAG='+els[i].tagName+' CLS='+(els[i].className||'')+' PARENTCLS='+(p&&p.className?p.className:'')+' HTML='+html;}}" +
+            "return 'NOPLACEHOLDER';})();"
+        js(clickJs) { info ->
+            Log.i(TAG, "dd0 " + info)
+            post(900) {
+                val dumpJs = "(function(){" +
+                    "var out=[];" +
+                    "var all=document.querySelectorAll('*');var n=0;" +
+                    "for(var i=0;i<all.length;i++){" +
+                    "var c=(all[i].className||'')+'';" +
+                    "if(c.indexOf('select')<0&&c.indexOf('Select')<0&&c.indexOf('drop')<0&&c.indexOf('Drop')<0&&c.indexOf('option')<0&&c.indexOf('Option')<0&&c.indexOf('list')<0&&c.indexOf('List')<0){continue;}" +
+                    "var t=(all[i].innerText||'').trim();" +
+                    "if(t.length>26){continue;}" +
+                    "out.push(all[i].tagName+'.'+c.split(' ')[0]+'='+t);" +
+                    "n++;if(n>=18){break;}}" +
+                    "return 'N='+n+' :: '+out.join(' | ');})();"
+                js(dumpJs) { res ->
+                    Log.i(TAG, "dd1 " + res)
+                    status("④ 下拉結構已記錄")
+                    finishFlow(false, "已點開帳號下拉，但還不會選\n技術：\n" + info.take(120) + "\n" + res.take(200))
+                }
             }
         }
     }
