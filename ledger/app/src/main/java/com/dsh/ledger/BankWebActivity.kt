@@ -269,6 +269,12 @@ class BankWebActivity : ComponentActivity() {
                     }
                 }
                 @android.webkit.JavascriptInterface
+                fun onTable(payload: String) {
+                    Log.i(TAG, "TABLE len=" + payload.length)
+                    runOnUiThread { handleTableData(payload) }
+                }
+
+                @android.webkit.JavascriptInterface
                 fun onData(payload: String) {
                     Log.i(TAG, "DATA len=" + payload.length)
                     runOnUiThread { handleBankData(payload) }
@@ -347,6 +353,15 @@ class BankWebActivity : ComponentActivity() {
         bottom.addView(resultView)
         bottom.addView(statusView)
         bottom.addView(runBtn)
+        val tableBtn = Button(this).apply {
+            text = "▶ 解析本頁交易表格並記帳"
+            textSize = 13f
+            setTextColor(AColor.WHITE)
+            setBackgroundColor(0xFF455A64.toInt())
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40))
+            setOnClickListener { if (!flowRunning) scrapeTable() }
+        }
+        bottom.addView(tableBtn)
         val histBtn = Button(this).apply {
             text = "▶ 補抓歷史（分批）"
             textSize = 13f
@@ -609,6 +624,92 @@ class BankWebActivity : ComponentActivity() {
         jl.add("return 'STARTED';})();")
         web.evaluateJavascript(jl.joinToString(""), null)
         status("② 分批抓取中…")
+    }
+
+    /** 表格模式：適合 JSF／傳統網銀（富邦、玉山、郵局…），直接解析當前頁面的表格 */
+    private fun scrapeTable() {
+        flowRunning = true
+        resultView.visibility = View.GONE
+        progressView.visibility = View.VISIBLE
+        status("讀取本頁表格…")
+        val jsCode = "(function(){" +
+            "var out=[];var rows=document.querySelectorAll('tr');" +
+            "for(var i=0;i<rows.length;i++){" +
+            "var cells=rows[i].querySelectorAll('td,th');" +
+            "if(cells.length<2){continue;}" +
+            "var arr=[];" +
+            "for(var j=0;j<cells.length&&j<8;j++){var t=(cells[j].innerText||'').trim().replace(/\s+/g,' ');arr.push(t.substring(0,40));}" +
+            "out.push(arr);}" +
+            "LedgerBridge.onTable(JSON.stringify(out));" +
+            "return 'ROWS='+out.length;})();"
+        web.evaluateJavascript(jsCode) { r -> status("表格：" + (r ?: "")) }
+    }
+
+    /** 解析表格列 → 交易 */
+    private fun handleTableData(payload: String) {
+        runCatching {
+            Store.init(applicationContext)
+            val arr = org.json.JSONArray(payload)
+            val dateRe = Regex("(\\d{2,4})[/\\-](\\d{1,2})[/\\-](\\d{1,2})")
+            val mdRe = Regex("(\\d{1,2})/(\\d{1,2})")
+            val amtRe = Regex("^[-+]?[\\d,]+(\\.[0-9]{1,2})?$")
+            val rows = mutableListOf<Tx>()
+            val samples = mutableListOf<String>()
+            var scanned = 0
+            for (i in 0 until arr.length()) {
+                val cells = arr.optJSONArray(i) ?: continue
+                val texts = (0 until cells.length()).map { cells.optString(it).trim() }.filter { it.isNotEmpty() }
+                if (texts.size < 2) continue
+                scanned++
+                var date: java.time.LocalDate? = null
+                for (t in texts) {
+                    val m = dateRe.find(t) ?: continue
+                    val y = m.groupValues[1].toInt().let { if (it < 1900) 2026 else it }
+                    val mm = m.groupValues[2]
+                    val dd = m.groupValues[3]
+                    date = runCatching { java.time.LocalDate.parse(String.format("%04d-%02d-%02d", y, mm.toInt(), dd.toInt())) }.getOrNull()
+                    if (date != null) break
+                }
+                if (date == null) {
+                    for (t in texts) {
+                        val m = mdRe.find(t) ?: continue
+                        date = runCatching {
+                            java.time.LocalDate.of(2026, m.groupValues[1].toInt(), m.groupValues[2].toInt())
+                        }.getOrNull()
+                        if (date != null) break
+                    }
+                }
+                if (date == null) continue
+                val amounts = texts.filter { amtRe.matches(it.replace(" ", "")) }
+                    .map { it.replace(",", "").replace(" ", "") }
+                    .mapNotNull { it.toDoubleOrNull() }
+                if (amounts.isEmpty()) continue
+                val amt = amounts.first()
+                val cents = Math.round(amt * 100)
+                if (cents == 0L) continue
+                val desc = texts.firstOrNull { t ->
+                    !amtRe.matches(t.replace(" ", "")) && !dateRe.containsMatchIn(t) && t.length >= 2
+                } ?: "銀行明細"
+                rows.add(
+                    Tx(
+                        id = 0, accountId = 0, cents = Math.abs(cents),
+                        kind = if (cents < 0) Kind.EXPENSE else Kind.INCOME,
+                        category = "尚未分類", note = desc.take(40), dateMillis = date.toMillis()
+                    )
+                )
+                if (samples.size < 3) samples.add("" + date + " " + desc.take(12) + " " + amt)
+            }
+            if (rows.isEmpty()) {
+                finishFlow(false, "這頁找不到可解析的交易列（掃了 " + scanned + " 列）\n請確認停在「交易明細」清單頁面")
+                return
+            }
+            var target = Store.accounts.firstOrNull { it.name == "國泰世華" }
+            if (target == null) { Store.addAccount("國泰世華"); target = Store.accounts.firstOrNull { it.name == "國泰世華" } }
+            val accId = target?.id ?: 1L
+            var next = Store.newId()
+            val added = Store.addImported(rows.map { it.copy(id = next++, accountId = accId) })
+            finishFlow(true, "解析 " + rows.size + " 筆，新增 " + added + " 筆\n例：" + samples.joinToString("、"))
+        }.onFailure { finishFlow(false, "解析失敗：" + (it.message ?: "")) }
     }
 
     /** API 回應 → 匯入帳本（自動略過重複） */
