@@ -499,6 +499,21 @@ class BankWebActivity : ComponentActivity() {
         }
     }
 
+    /** 流程結束回饋：綠色成功／紅色失敗，同時 Toast 與 log */
+    private fun finishFlow(ok: Boolean, message: String) {
+        flowRunning = false
+        progressView.visibility = View.GONE
+        resultView.apply {
+            text = (if (ok) "\u2705 完成\n" else "\u26a0\ufe0f 失敗\n") + message
+            setTextColor(if (ok) 0xFF1B5E20.toInt() else 0xFFB71C1C.toInt())
+            setBackgroundColor(if (ok) 0xFFE8F5E9.toInt() else 0xFFFFEBEE.toInt())
+            visibility = View.VISIBLE
+        }
+        status("（流程結束）" + if (ok) "成功" else "失敗")
+        Toast.makeText(this, if (ok) "自動查詢完成" else "自動查詢失敗，請看畫面說明", Toast.LENGTH_LONG).show()
+        Log.i(TAG, "RESULT ok=" + ok + " " + message.replace("\n", " / "))
+    }
+
     /** 帶入身分證字號與用戶代號（不含密碼） */
     private fun injectIdentifiers(attempt: Int = 1) {
         if (idNo.isBlank() && userCode.isBlank()) return
