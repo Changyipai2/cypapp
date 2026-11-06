@@ -76,6 +76,7 @@ class BankWebActivity : ComponentActivity() {
     private var accountTail: String = ""
     private var bankAcctNo: String = ""
     private var autoFilled = false
+    private var autoRan = false
     private var flowRunning = false
     private lateinit var resultView: TextView
     private lateinit var progressView: android.widget.ProgressBar
@@ -213,6 +214,20 @@ class BankWebActivity : ComponentActivity() {
                     if (url != null && url != "about:blank") {
                         currentUrl = url
                         urlInput.setText(url)
+                        if (!autoRan && storedAccts().isNotEmpty()) {
+                            autoRan = true
+                            post(1500) {
+                                js("(function(){return document.querySelector('#CustID')?'LOGIN':'IN';})();") { r ->
+                                    if (!r.contains("LOGIN") && !flowRunning) {
+                                        status("已登入，自動抓取明細…")
+                                        flowRunning = true
+                                        resultView.visibility = View.GONE
+                                        progressView.visibility = View.VISIBLE
+                                        directFetch(storedAccts())
+                                    }
+                                }
+                            }
+                        }
                         if (!autoFilled && (idNo.isNotBlank() || userCode.isNotBlank())) {
                             autoFilled = true
                             post(500) { injectIdentifiers() }
