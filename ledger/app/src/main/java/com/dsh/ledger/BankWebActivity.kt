@@ -319,8 +319,15 @@ class BankWebActivity : ComponentActivity() {
             if (r.contains("LOGIN")) {
                 finishFlow(false, "還沒登入\n請先輸入帳密並按「登入」，登入成功後再按一次")
             } else {
-                status("② 找「交易明細／帳戶查詢」連結…")
-                findStatement()
+                js("(function(){var n=0;var els=document.querySelectorAll('div,span,input');for(var i=0;i<els.length;i++){var t=((els[i].innerText||els[i].value||'')+'').trim();if(t==='請選擇'){n++;}}return 'PH='+n;})();") { c ->
+                    if (c.contains("PH=0")) {
+                        status("② 找「交易明細／帳戶查詢」連結…")
+                        findStatement()
+                    } else {
+                        status("② 已在明細頁，直接選條件…")
+                        openAccountDropdown()
+                    }
+                }
             }
         }
     }
@@ -329,17 +336,22 @@ class BankWebActivity : ComponentActivity() {
         val script = "(function(){" +
             "var kw=['臺幣帳戶明細','帳戶明細','交易明細','存款明細','交易查詢','帳戶查詢','交易紀錄','明細查詢'];" +
             "var bad=['設定','新增','管理','說明','申請','連結','更多'];" +
-            "var nodes=document.querySelectorAll('a,button,[role=button]');" +
-            "var best=null,bestScore=-1,bestText='';" +
-            "for(var i=0;i<nodes.length;i++){" +
-            "var t=(nodes[i].innerText||nodes[i].textContent||'').trim();" +
+            "function pick(sel){" +
+            "var nodes=document.querySelectorAll(sel);var best=null,bs=-1,bt='';" +
+            "for(var i=0;i<nodes.length;i++){var e=nodes[i];" +
+            "if(e.offsetParent===null){continue;}" +
+            "if(e.children.length>3){continue;}" +
+            "var t=(e.innerText||e.textContent||'').trim();" +
             "if(!t||t.length>20){continue;}" +
-            "var skip=false;for(var b=0;b<bad.length;b++){if(t.indexOf(bad[b])>=0){skip=true;break;}}" +
+            "var skip=false;for(var b2=0;b2<bad.length;b2++){if(t.indexOf(bad[b2])>=0){skip=true;break;}}" +
             "if(skip){continue;}" +
-            "for(var k=0;k<kw.length;k++){" +
-            "var sc=-1;if(t===kw[k]){sc=100-k;}else if(t.indexOf(kw[k])>=0){sc=50-k;}" +
-            "if(sc>bestScore){bestScore=sc;best=nodes[i];bestText=t;}}}" +
-            "if(best){try{best.scrollIntoView({block:'center'});}catch(e){}best.click();return 'CLICK:'+bestText;}" +
+            "for(var k=0;k<kw.length;k++){var sc=-1;" +
+            "if(t===kw[k]){sc=100-k;}else if(t.indexOf(kw[k])>=0&&t.length<=12){sc=50-k;}" +
+            "if(sc>bs){bs=sc;best=e;bt=t;}}}" +
+            "if(best){try{best.scrollIntoView({block:'center'});}catch(e2){}best.click();return 'CLICK:'+bt;}" +
+            "return null;}" +
+            "var r=pick('a,button,[role=button]');if(r){return r;}" +
+            "r=pick('li,div,span,p,td,dd');if(r){return r;}" +
             "return 'NOTFOUND';})();"
         js(script) { res ->
             if (res.contains("CLICK:")) {
