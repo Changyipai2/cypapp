@@ -75,6 +75,7 @@ class BankWebActivity : ComponentActivity() {
     private var queryUrl: String = ""
     private var accountTail: String = ""
     private var bankAcctNo: String = ""
+    private var profile: BankProfile? = null
     private var autoFilled = false
     private var autoRan = false
     private var flowRunning = false
@@ -118,6 +119,7 @@ class BankWebActivity : ComponentActivity() {
         accountTail = intent.getStringExtra(EXTRA_TAIL).orEmpty()
         bankAcctNo = intent.getStringExtra(EXTRA_ACCTNO).orEmpty()
         if (bankAcctNo.isNotBlank()) saveAccts(listOf(bankAcctNo))
+        profile = BankProfiles.find(title)
         currentUrl = startUrl
 
         val root = LinearLayout(this).apply {
@@ -505,6 +507,13 @@ class BankWebActivity : ComponentActivity() {
     /** 用登入中的 session 直接呼叫銀行 API：取 JWT → 帶 Authorization 取明細 */
     private fun directFetch(rawNums: List<String>) {
         val accts = rawNums.map { it.padStart(16, '0') }.distinct()
+        val pf = profile
+        if (pf == null || !pf.ready) {
+            finishFlow(false, "「" + title + "」還沒建檔，無法直接抓資料")
+            return
+        }
+        val jwtPath = pf.jwtPath.ifBlank { "" }
+        val detailPath = pf.detailPath
         val cust = idNo.ifBlank { "" }
         if (cust.isBlank()) {
             finishFlow(false, "缺少身分證字號（API 需要）\n請在帳戶資料填上身分證字號")
@@ -522,14 +531,16 @@ class BankWebActivity : ComponentActivity() {
         jsParts.add("function run(jwt){var results=[];var pending=accts.length;")
         jsParts.add("function done(){if(pending<=0){LedgerBridge.onData(JSON.stringify({accounts:results,jwtLen:jwt.length}));}}")
         jsParts.add("for(var i=0;i<accts.length;i++){(function(acc){")
-        jsParts.add("fetch('/OnlineBankingApi/ClientBank/Api/ClientBank/B_ACCT_Q_TransferDetail',{method:'POST',credentials:'include',")
+        jsParts.add("fetch(" + JSONObject.quote(detailPath) + ",{method:'POST',credentials:'include',")
         jsParts.add("headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*','Authorization':'Bearer '+jwt},")
         jsParts.add("body:JSON.stringify({functionSeqNo:seq(),content:{customerId:cust,queryFilters:[{accountNumber:acc,startDate:start,endDate:end}]}})")
         jsParts.add("}).then(function(r){var st=r.status;return r.text().then(function(txx){var j=null;try{j=JSON.parse(txx);}catch(e2){j={_raw:txx.substring(0,200)};}return {st:st,j:j};});})")
         jsParts.add(".then(function(o){results.push({acct:acc,status:o.st,resp:o.j});pending--;done();})")
         jsParts.add(".catch(function(e){results.push({acct:acc,error:String(e)});pending--;done();});})(accts[i]);}}")
+        if (jwtPath.isBlank()) { jsParts.add("run('');return 'NOJWTNEEDED';})();"); web.evaluateJavascript(jsParts.joinToString(""), null); status("④ 直接呼叫 API…"); return }
         jsParts.add("var cached=pickJwt();if(cached){run(cached);return 'CACHED';}")
-        jsParts.add("fetch('/MyBank/Customized/GetJWT',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*'},body:'{}'})")
+        jsParts.add("var cached=pickJwt();if(cached){run(cached);return 'CACHED';}")
+        if (jwtPath.isNotBlank()) jsParts.add("fetch(" + JSONObject.quote(jwtPath) + ",{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*'},body:'{}'})")
         jsParts.add(".then(function(r){return r.text();})")
         jsParts.add(".then(function(txt){var jwt='';try{var o=JSON.parse(txt);jwt=(o&&o.Data&&o.Data.JwtToken)?o.Data.JwtToken:'';}catch(e){}")
         jsParts.add("if(!jwt){LedgerBridge.onData(JSON.stringify({accounts:[],error:'NOJWT:'+txt.substring(0,160)}));return;}run(jwt);})")
@@ -567,6 +578,10 @@ class BankWebActivity : ComponentActivity() {
 
     /** 依指定區間陣列，分批呼叫 API 後一次匯入 */
     private fun directFetchChunks(acctsIn: List<String>, chunks: List<Pair<String, String>>) {
+        val pf = profile
+        if (pf == null || !pf.ready) { finishFlow(false, "「" + title + "」還沒建檔，無法批次抓取"); return }
+        val detailPath = pf.detailPath
+        val jwtPath = pf.jwtPath
         val cust = idNo.ifBlank { "" }
         if (cust.isBlank()) { finishFlow(false, "缺少身分證字號，無法呼叫 API"); return }
         val jl = mutableListOf<String>()
@@ -579,7 +594,7 @@ class BankWebActivity : ComponentActivity() {
         jl.add("function pickJwt(){try{var st=window.sessionStorage;for(var i=0;i<st.length;i++){var v=st.getItem(st.key(i));if(v&&v.length>60&&v.indexOf('eyJ')===0&&v.split('.').length===3){return v;}}}catch(e){}return '';}")
         jl.add("function run(jwt){var results=[];var idx=0;")
         jl.add("function next(){if(idx>=chunks.length){LedgerBridge.onData(JSON.stringify({accounts:results}));return;}var c=chunks[idx++];")
-        jl.add("fetch('/OnlineBankingApi/ClientBank/Api/ClientBank/B_ACCT_Q_TransferDetail',{method:'POST',credentials:'include',")
+        jl.add("fetch(" + JSONObject.quote(detailPath) + ",{method:'POST',credentials:'include',")
         jl.add("headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*','Authorization':'Bearer '+jwt},")
         jl.add("body:JSON.stringify({functionSeqNo:seq(),content:{customerId:cust,queryFilters:[{accountNumber:acc,startDate:c[0],endDate:c[1]}]}})")
         jl.add("}).then(function(r){var st=r.status;return r.text().then(function(t){var j=null;try{j=JSON.parse(t);}catch(e){j={_raw:t.substring(0,120)};}return {st:st,j:j};});})")
@@ -587,7 +602,7 @@ class BankWebActivity : ComponentActivity() {
         jl.add(".catch(function(e){results.push({acct:acc,error:String(e)});next();});}")
         jl.add("next();}")
         jl.add("var cached=pickJwt();if(cached){run(cached);return 'CACHED';}")
-        jl.add("fetch('/MyBank/Customized/GetJWT',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*'},body:'{}'})")
+        jl.add("fetch(" + JSONObject.quote(jwtPath) + ",{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json, text/plain, */*'},body:'{}'})")
         jl.add(".then(function(r){return r.text();}).then(function(txt){var jwt='';try{var o=JSON.parse(txt);jwt=(o&&o.Data&&o.Data.JwtToken)?o.Data.JwtToken:'';}catch(e){}")
         jl.add("if(!jwt){LedgerBridge.onData(JSON.stringify({accounts:[],error:'NOJWT:'+txt.substring(0,120)}));return;}run(jwt);})")
         jl.add(".catch(function(e){LedgerBridge.onData(JSON.stringify({accounts:[],error:'JWTFAIL:'+String(e)}));});")
