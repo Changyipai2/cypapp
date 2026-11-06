@@ -26,7 +26,8 @@ data class BankAccount(
     val queryUrl: String = "", // 交易查詢頁（登入後一鍵前往）
     val note: String = "",
     val idNo: String = "",     // 身分證字號（加密存放，自動帶入登入頁）
-    val userCode: String = ""  // 網銀用戶代號（加密存放，自動帶入登入頁）
+    val userCode: String = "",  // 網銀用戶代號（加密存放，自動帶入登入頁）
+    val bankAcctNo: String = "" // 銀行帳號（加密存放，用來直接呼叫銀行 API 取明細）
 )
 
 /**
@@ -105,6 +106,8 @@ object Vault {
                 val idNo = if (encId.isBlank()) "" else decrypt(encId) ?: ""
                 val encCode = o.optString("userCodeEnc", "")
                 val userCode = if (encCode.isBlank()) "" else decrypt(encCode) ?: ""
+                val encAcct = o.optString("bankAcctNoEnc", "")
+                val bankAcctNo = if (encAcct.isBlank()) "" else decrypt(encAcct) ?: ""
                 list.add(
                     BankAccount(
                         id = o.optLong("id"),
@@ -116,7 +119,8 @@ object Vault {
                         queryUrl = o.optString("queryUrl", ""),
                         note = o.optString("note", ""),
                         idNo = idNo,
-                        userCode = userCode
+                        userCode = userCode,
+                        bankAcctNo = bankAcctNo
                     )
                 )
             }
@@ -139,6 +143,7 @@ object Vault {
                     .put("note", a.note)
                     .put("idNoEnc", if (a.idNo.isBlank()) "" else encrypt(a.idNo))
                     .put("userCodeEnc", if (a.userCode.isBlank()) "" else encrypt(a.userCode))
+                    .put("bankAcctNoEnc", if (a.bankAcctNo.isBlank()) "" else encrypt(a.bankAcctNo))
             )
         }
         val root = JSONObject().put("version", 1).put("accounts", arr)
