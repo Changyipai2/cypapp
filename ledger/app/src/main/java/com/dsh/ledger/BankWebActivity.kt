@@ -534,6 +534,64 @@ class BankWebActivity : ComponentActivity() {
         }
     }
 
+    /** 流程結束回饋：綠色成功／紅色失敗，同時 Toast 與 log */
+    private fun finishFlow(ok: Boolean, message: String) {
+        flowRunning = false
+        progressView.visibility = View.GONE
+        resultView.apply {
+            text = (if (ok) "\u2705 完成\n" else "\u26a0\ufe0f 失敗\n") + message
+            setTextColor(if (ok) 0xFF1B5E20.toInt() else 0xFFB71C1C.toInt())
+            setBackgroundColor(if (ok) 0xFFE8F5E9.toInt() else 0xFFFFEBEE.toInt())
+            visibility = View.VISIBLE
+        }
+        status("（流程結束）" + if (ok) "成功" else "失敗")
+        Toast.makeText(this, if (ok) "自動查詢完成" else "自動查詢失敗，請看畫面說明", Toast.LENGTH_LONG).show()
+        Log.i(TAG, "RESULT ok=" + ok + " " + message.replace("\n", " / "))
+    }
+
+
+    /** 側錄銀行頁面發出的 XHR／fetch（只記錄，不修改內容） */
+    private fun installNetSpy() {
+        val spy = "(function(){" +
+            "if(window.__DSH_SPY){return 'ALREADY';}window.__DSH_SPY=1;window.__DSH=[];" +
+            "var of=window.fetch;" +
+            "if(of){window.fetch=function(input,init){" +
+            "var u=(typeof input==='string')?input:(input&&input.url?input.url:'');" +
+            "var r={url:String(u),body:(init&&init.body)?String(init.body).slice(0,400):'',text:'',status:0};" +
+            "window.__DSH.push(r);" +
+            "return of.apply(this,arguments).then(function(resp){r.status=resp.status;" +
+            "try{resp.clone().text().then(function(t){r.text=String(t).slice(0,2000);}).catch(function(){});}catch(e){}" +
+            "return resp;});};}" +
+            "var op=XMLHttpRequest.prototype.open;var sd=XMLHttpRequest.prototype.send;" +
+            "XMLHttpRequest.prototype.open=function(m,u){this.__dsh={url:String(u),body:'',text:'',status:0};window.__DSH.push(this.__dsh);return op.apply(this,arguments);};" +
+            "XMLHttpRequest.prototype.send=function(b){var self=this;" +
+            "try{if(self.__dsh){self.__dsh.body=b?String(b).slice(0,400):'';" +
+            "self.addEventListener('load',function(){try{self.__dsh.status=self.status;self.__dsh.text=String(self.responseText||'').slice(0,2000);}catch(e){}});}}" +
+            "catch(e){}" +
+            "return sd.apply(self,arguments);};" +
+            "return 'SPYON';})();"
+        web.evaluateJavascript(spy, null)
+    }
+
+
+    /** 把側錄到的請求寫進 log */
+    private fun dumpNetSpy() {
+        web.evaluateJavascript("(function(){try{return 'N='+((window.__DSH||[]).length)+'::'+JSON.stringify((window.__DSH||[]).slice(-8));}catch(e){return 'ERR';}})();") { raw ->
+            val res = raw ?: "EMPTY"
+            Log.i(TAG, "SPYLEN=" + res.length)
+            var i = 0
+            var chunk = 0
+            while (i < res.length) {
+                val end = minOf(i + 2600, res.length)
+                Log.i(TAG, "SPY#" + chunk + "#" + res.substring(i, end))
+                i = end
+                chunk++
+            }
+            status("已記錄 " + res.length + " 字元")
+            Toast.makeText(this, "已記錄，可以告訴我了", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     /** 帶入身分證字號與用戶代號（不含密碼） */
     private fun injectIdentifiers(attempt: Int = 1) {
         if (idNo.isBlank() && userCode.isBlank()) return
