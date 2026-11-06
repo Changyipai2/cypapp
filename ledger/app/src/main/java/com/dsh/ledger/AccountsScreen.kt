@@ -76,7 +76,7 @@ fun AccountsScreen() {
                 context.startActivity(
                     BankWebActivity.intent(
                         context, webAccount.bankName, webAccount.loginUrl,
-                        webAccount.queryUrl, webAccount.idNo, webAccount.userCode
+                        webAccount.queryUrl, webAccount.idNo, webAccount.userCode, webAccount.accountTail
                     )
                 )
             }.onFailure {
