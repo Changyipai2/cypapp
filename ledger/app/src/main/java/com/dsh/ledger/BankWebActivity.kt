@@ -41,6 +41,7 @@ class BankWebActivity : ComponentActivity() {
         private const val EXTRA_IDNO = "idNo"
         private const val EXTRA_UCODE = "userCode"
         private const val EXTRA_TAIL = "tail"
+        private const val EXTRA_ACCTNO = "acctNo"
         private const val TAG = "BankFlow"
         private const val DETAIL_URL = "https://www.cathaybk.com.tw/OnlineBanking/AcctInq/B0103_TxnDtlInq"
 
@@ -51,7 +52,8 @@ class BankWebActivity : ComponentActivity() {
             queryUrl: String,
             idNo: String = "",
             userCode: String = "",
-            tail: String = ""
+            tail: String = "",
+            acctNo: String = ""
         ): Intent =
             Intent(ctx, BankWebActivity::class.java)
                 .putExtra(EXTRA_TITLE, title)
@@ -60,6 +62,7 @@ class BankWebActivity : ComponentActivity() {
                 .putExtra(EXTRA_IDNO, idNo)
                 .putExtra(EXTRA_UCODE, userCode)
                 .putExtra(EXTRA_TAIL, tail)
+                .putExtra(EXTRA_ACCTNO, acctNo)
     }
 
     private lateinit var web: WebView
@@ -71,6 +74,7 @@ class BankWebActivity : ComponentActivity() {
     private var userCode: String = ""
     private var queryUrl: String = ""
     private var accountTail: String = ""
+    private var bankAcctNo: String = ""
     private var autoFilled = false
     private var flowRunning = false
     private lateinit var resultView: TextView
@@ -111,6 +115,8 @@ class BankWebActivity : ComponentActivity() {
         idNo = intent.getStringExtra(EXTRA_IDNO).orEmpty()
         userCode = intent.getStringExtra(EXTRA_UCODE).orEmpty()
         accountTail = intent.getStringExtra(EXTRA_TAIL).orEmpty()
+        bankAcctNo = intent.getStringExtra(EXTRA_ACCTNO).orEmpty()
+        if (bankAcctNo.isNotBlank()) saveAccts(listOf(bankAcctNo))
         currentUrl = startUrl
 
         val root = LinearLayout(this).apply {
